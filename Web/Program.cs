@@ -74,10 +74,10 @@ builder.Services.AddAuthentication(options =>
     options.RequireHttpsMetadata = false;
 
     // Bypass SSL certificate validation for WSO2 self-signed cert
-    options.BackchannelHandler = new HttpClientHandler
+    options.Backchannel = new HttpClient(new HttpClientHandler
     {
         ServerCertificateCustomValidationCallback = (_, _, _, _) => true
-    };
+    });
 
     options.Events = new OpenIdConnectEvents
     {
