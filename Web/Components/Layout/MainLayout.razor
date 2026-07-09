@@ -1,0 +1,42 @@
+@using ShellMgmt.Web.Constants
+@inherits LayoutComponentBase
+@inject NavigationManager Navigation
+@inject IHttpContextAccessor Context
+@inject IConfiguration Configuration
+@inject Wso2Service Wso2Service
+@inject MenuService MenuService
+
+<RadzenComponents />
+
+<RadzenLayout style="grid-template-areas: 'rz-sidebar rz-header' 'rz-sidebar rz-body';">
+    <RadzenHeader>
+        <RadzenRow JustifyContent="JustifyContent.Start" AlignItems="AlignItems.Center" Gap="0">
+            <RadzenColumn Size="5">
+                <RadzenSidebarToggle Click="@SidebarToggleClick"></RadzenSidebarToggle>
+            </RadzenColumn>
+            <RadzenColumn Size="7">
+                <RadzenStack AlignItems="AlignItems.Center" Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End">
+                    <RadzenAppearanceToggle />
+                    <RadzenProfileMenu Visible="@(Context.HttpContext?.User.Identity?.IsAuthenticated ?? false)" Click="@ProfileMenuClick">
+                        <ChildContent>
+                            <RadzenProfileMenuItem Text="Change Password" Value="ChangePassword" Icon="vpn_key" />
+                            <RadzenProfileMenuItem Text="Logout" Value="Logout" Icon="power_settings_new" />
+                        </ChildContent>
+                        <Template>
+                            @Context.HttpContext?.User.Identity?.Name
+                        </Template>
+                    </RadzenProfileMenu>
+                </RadzenStack>
+            </RadzenColumn>
+        </RadzenRow>
+    </RadzenHeader>
+    <RadzenBody Expanded="@sidebarExpanded" Style="padding:0; overflow: auto;">
+        @Body
+    </RadzenBody>
+    <RadzenSidebar Expanded="@sidebarExpanded" style="z-index: 2">
+        @if (menuItems != null)
+        {
+            <MenuItemPanel MenuItems="menuItems" />
+        }
+    </RadzenSidebar>
+</RadzenLayout>

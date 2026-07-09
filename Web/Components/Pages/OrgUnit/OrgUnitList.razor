@@ -1,0 +1,70 @@
+@page "/orgunits"
+@attribute [Authorize]
+@inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject DialogService DialogService
+
+<PageTitle>Organization Units - Shell Management Portal</PageTitle>
+
+<RadzenRow class="rz-p-4">
+    <RadzenColumn Size="12">
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+            <RadzenText TextStyle="TextStyle.H4">Organization Units</RadzenText>
+            <RadzenButton Text="Add Org Unit" Icon="add" Click="@CreateOrgUnit" />
+        </RadzenStack>
+    </RadzenColumn>
+</RadzenRow>
+
+<RadzenDataGrid @ref="grid" Data="@items" TItem="OrgUnitDto" AllowSorting="true" AllowPaging="true" PageSize="10">
+    <Columns>
+        <RadzenDataGridColumn TItem="OrgUnitDto" Property="Name" Title="Name" />
+        <RadzenDataGridColumn TItem="OrgUnitDto" Property="ParentUnitId" Title="Parent Unit ID" />
+        <RadzenDataGridColumn TItem="OrgUnitDto" Property="Description" Title="Description" />
+        <RadzenDataGridColumn TItem="OrgUnitDto" Title="Actions" Width="200px">
+            <Template Context="item">
+                <RadzenButton Icon="edit" Size="ButtonSize.Small" Click="@(() => EditOrgUnit(item))" />
+                <RadzenButton Icon="delete" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Danger" Click="@(() => DeleteOrgUnit(item))" />
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    RadzenDataGrid<OrgUnitDto>? grid;
+    IEnumerable<OrgUnitDto>? items;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        var result = await ApiService.GetAsync<PagedList<OrgUnitDto>>("orgunit/get", AppConfig.AccessToken);
+        items = result?.Items;
+        if (grid != null) await grid.Reload();
+    }
+
+    private async Task CreateOrgUnit()
+    {
+        var result = await DialogService.OpenAsync<OrgUnitForm>("Add Org Unit");
+        if (result == true) await LoadData();
+    }
+
+    private async Task EditOrgUnit(OrgUnitDto item)
+    {
+        var result = await DialogService.OpenAsync<OrgUnitForm>("Edit Org Unit", new() { { "OrgUnitId", item.Id } });
+        if (result == true) await LoadData();
+    }
+
+    private async Task DeleteOrgUnit(OrgUnitDto item)
+    {
+        var confirmed = await DialogService.Confirm("Are you sure?", "Delete Org Unit");
+        if (confirmed == true)
+        {
+            await ApiService.DeleteAsync($"orgunit/delete/{item.Id}", AppConfig.AccessToken);
+            NotificationService.Notify(NotificationSeverity.Success, "Deleted", "Org Unit deleted successfully");
+            await LoadData();
+        }
+    }
+}

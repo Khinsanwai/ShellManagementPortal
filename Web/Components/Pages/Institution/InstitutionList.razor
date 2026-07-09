@@ -1,0 +1,70 @@
+@page "/institutions"
+@attribute [Authorize]
+@inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject DialogService DialogService
+
+<PageTitle>Institutions - Shell Management Portal</PageTitle>
+
+<RadzenRow class="rz-p-4">
+    <RadzenColumn Size="12">
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+            <RadzenText TextStyle="TextStyle.H4">Institutions</RadzenText>
+            <RadzenButton Text="Add Institution" Icon="add" Click="@CreateInstitution" />
+        </RadzenStack>
+    </RadzenColumn>
+</RadzenRow>
+
+<RadzenDataGrid @ref="grid" Data="@items" TItem="InstitutionDto" AllowSorting="true" AllowPaging="true" PageSize="10">
+    <Columns>
+        <RadzenDataGridColumn TItem="InstitutionDto" Property="Name" Title="Name" />
+        <RadzenDataGridColumn TItem="InstitutionDto" Property="Code" Title="Code" />
+        <RadzenDataGridColumn TItem="InstitutionDto" Property="Description" Title="Description" />
+        <RadzenDataGridColumn TItem="InstitutionDto" Title="Actions" Width="200px">
+            <Template Context="item">
+                <RadzenButton Icon="edit" Size="ButtonSize.Small" Click="@(() => EditInstitution(item))" />
+                <RadzenButton Icon="delete" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Danger" Click="@(() => DeleteInstitution(item))" />
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    RadzenDataGrid<InstitutionDto>? grid;
+    IEnumerable<InstitutionDto>? items;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        var result = await ApiService.GetAsync<PagedList<InstitutionDto>>("institution/get", AppConfig.AccessToken);
+        items = result?.Items;
+        if (grid != null) await grid.Reload();
+    }
+
+    private async Task CreateInstitution()
+    {
+        var result = await DialogService.OpenAsync<InstitutionForm>("Add Institution");
+        if (result == true) await LoadData();
+    }
+
+    private async Task EditInstitution(InstitutionDto item)
+    {
+        var result = await DialogService.OpenAsync<InstitutionForm>("Edit Institution", new() { { "InstitutionId", item.Id } });
+        if (result == true) await LoadData();
+    }
+
+    private async Task DeleteInstitution(InstitutionDto item)
+    {
+        var confirmed = await DialogService.Confirm("Are you sure?", "Delete Institution");
+        if (confirmed == true)
+        {
+            await ApiService.DeleteAsync($"institution/delete/{item.Id}", AppConfig.AccessToken);
+            NotificationService.Notify(NotificationSeverity.Success, "Deleted", "Institution deleted successfully");
+            await LoadData();
+        }
+    }
+}

@@ -1,0 +1,70 @@
+@page "/claims"
+@attribute [Authorize]
+@inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject DialogService DialogService
+
+<PageTitle>Claims - Shell Management Portal</PageTitle>
+
+<RadzenRow class="rz-p-4">
+    <RadzenColumn Size="12">
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+            <RadzenText TextStyle="TextStyle.H4">Claims</RadzenText>
+            <RadzenButton Text="Add Claim" Icon="add" Click="@CreateClaim" />
+        </RadzenStack>
+    </RadzenColumn>
+</RadzenRow>
+
+<RadzenDataGrid @ref="grid" Data="@claims" TItem="ClaimDto" AllowSorting="true" AllowPaging="true" PageSize="10">
+    <Columns>
+        <RadzenDataGridColumn TItem="ClaimDto" Property="Name" Title="Name" />
+        <RadzenDataGridColumn TItem="ClaimDto" Property="Value" Title="Value" />
+        <RadzenDataGridColumn TItem="ClaimDto" Property="Description" Title="Description" />
+        <RadzenDataGridColumn TItem="ClaimDto" Title="Actions" Width="200px">
+            <Template Context="claim">
+                <RadzenButton Icon="edit" Size="ButtonSize.Small" Click="@(() => EditClaim(claim))" />
+                <RadzenButton Icon="delete" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Danger" Click="@(() => DeleteClaim(claim))" />
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    RadzenDataGrid<ClaimDto>? grid;
+    IEnumerable<ClaimDto>? claims;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        var result = await ApiService.GetAsync<PagedList<ClaimDto>>("claim/get", AppConfig.AccessToken);
+        claims = result?.Items;
+        if (grid != null) await grid.Reload();
+    }
+
+    private async Task CreateClaim()
+    {
+        var result = await DialogService.OpenAsync<ClaimForm>("Add Claim");
+        if (result == true) await LoadData();
+    }
+
+    private async Task EditClaim(ClaimDto claim)
+    {
+        var result = await DialogService.OpenAsync<ClaimForm>("Edit Claim", new() { { "ClaimId", claim.Id } });
+        if (result == true) await LoadData();
+    }
+
+    private async Task DeleteClaim(ClaimDto claim)
+    {
+        var confirmed = await DialogService.Confirm("Are you sure you want to delete this claim?", "Delete Claim");
+        if (confirmed == true)
+        {
+            await ApiService.DeleteAsync($"claim/delete/{claim.Id}", AppConfig.AccessToken);
+            NotificationService.Notify(NotificationSeverity.Success, "Deleted", "Claim deleted successfully");
+            await LoadData();
+        }
+    }
+}

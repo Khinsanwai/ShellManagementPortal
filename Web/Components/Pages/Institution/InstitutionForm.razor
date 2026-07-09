@@ -1,0 +1,52 @@
+@inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject DialogService DialogService
+
+<RadzenTemplateForm Data="@model" TItem="InstitutionDto" Submit="@OnSubmit">
+    <RadzenStack Gap="1rem">
+        <RadzenFormField Text="Name">
+            <RadzenTextBox @bind-Value="model.Name" Name="Name" />
+            <RadzenRequiredValidator Component="Name" Text="Name is required" />
+        </RadzenFormField>
+        <RadzenFormField Text="Code">
+            <RadzenTextBox @bind-Value="model.Code" />
+        </RadzenFormField>
+        <RadzenFormField Text="Description">
+            <RadzenTextBox @bind-Value="model.Description" />
+        </RadzenFormField>
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End">
+            <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Light" Click="@(() => DialogService.Close(false))" />
+            <RadzenButton Text="Save" ButtonType="ButtonType.Submit" />
+        </RadzenStack>
+    </RadzenStack>
+</RadzenTemplateForm>
+
+@code {
+    [Parameter] public Guid? InstitutionId { get; set; }
+
+    private InstitutionDto model = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (InstitutionId.HasValue)
+        {
+            var result = await ApiService.GetAsync<PagedList<InstitutionDto>>($"institution/get?Id={InstitutionId}", AppConfig.AccessToken);
+            model = result?.Items?.FirstOrDefault() ?? new InstitutionDto();
+        }
+    }
+
+    private async Task OnSubmit(InstitutionDto item)
+    {
+        if (InstitutionId.HasValue)
+        {
+            await ApiService.PutAsync("institution/update", new { Id = InstitutionId, item.Name, item.Code, item.Description }, AppConfig.AccessToken);
+            NotificationService.Notify(NotificationSeverity.Success, "Updated", "Institution updated successfully");
+        }
+        else
+        {
+            await ApiService.PostAsync("institution/create", item, AppConfig.AccessToken);
+            NotificationService.Notify(NotificationSeverity.Success, "Created", "Institution created successfully");
+        }
+        DialogService.Close(true);
+    }
+}

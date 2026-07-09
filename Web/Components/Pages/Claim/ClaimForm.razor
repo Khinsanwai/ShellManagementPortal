@@ -1,0 +1,52 @@
+@inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject DialogService DialogService
+
+<RadzenTemplateForm Data="@model" TItem="ClaimDto" Submit="@OnSubmit">
+    <RadzenStack Gap="1rem">
+        <RadzenFormField Text="Name">
+            <RadzenTextBox @bind-Value="model.Name" Name="Name" />
+            <RadzenRequiredValidator Component="Name" Text="Name is required" />
+        </RadzenFormField>
+        <RadzenFormField Text="Value">
+            <RadzenTextBox @bind-Value="model.Value" />
+        </RadzenFormField>
+        <RadzenFormField Text="Description">
+            <RadzenTextBox @bind-Value="model.Description" />
+        </RadzenFormField>
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End">
+            <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Light" Click="@(() => DialogService.Close(false))" />
+            <RadzenButton Text="Save" ButtonType="ButtonType.Submit" />
+        </RadzenStack>
+    </RadzenStack>
+</RadzenTemplateForm>
+
+@code {
+    [Parameter] public Guid? ClaimId { get; set; }
+
+    private ClaimDto model = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (ClaimId.HasValue)
+        {
+            var result = await ApiService.GetAsync<PagedList<ClaimDto>>($"claim/get?Id={ClaimId}", AppConfig.AccessToken);
+            model = result?.Items?.FirstOrDefault() ?? new ClaimDto();
+        }
+    }
+
+    private async Task OnSubmit(ClaimDto claim)
+    {
+        if (ClaimId.HasValue)
+        {
+            await ApiService.PutAsync("claim/update", new { Id = ClaimId, claim.Name, claim.Value, claim.Description }, AppConfig.AccessToken);
+            NotificationService.Notify(NotificationSeverity.Success, "Updated", "Claim updated successfully");
+        }
+        else
+        {
+            await ApiService.PostAsync("claim/create", claim, AppConfig.AccessToken);
+            NotificationService.Notify(NotificationSeverity.Success, "Created", "Claim created successfully");
+        }
+        DialogService.Close(true);
+    }
+}

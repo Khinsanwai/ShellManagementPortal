@@ -1,0 +1,62 @@
+@using Microsoft.AspNetCore.Components
+@using ShellMgmt.Domain.MenuItemModels
+@inject NavigationManager NavigationManager
+
+<RadzenStack AlignItems="Radzen.AlignItems.Center" JustifyContent="Radzen.JustifyContent.Start" class="rz-py-4 rz-py-lg-6" Style="padding: 5px;">
+    <RadzenImage Path="images/logo.png" style="width: 150px; height: 50px;" AlternateText="Application logo" />
+</RadzenStack>
+
+@if (MenuItems != null)
+{
+    <RadzenPanelMenu>
+        @foreach (var menu in MenuItems.Where(x => x.ParentId == null || x.ParentId == Guid.Empty).OrderBy(x => x.MenuOrder).ToList())
+        {
+            var childItems = MenuItems
+                .Where(x => x.ParentId == menu.Id)
+                .OrderBy(x => x.MenuOrder)
+                .ToList();
+
+            if (childItems.Any())
+            {
+                <RadzenPanelMenuItem Text="@menu.Name" Icon="@GetMenuIcon(menu.Name)">
+                    @foreach (var item in childItems)
+                    {
+                        <RadzenPanelMenuItem Text="@item.Name" Click="@(() => OnMenuItemClick(item))" />
+                    }
+                </RadzenPanelMenuItem>
+            }
+        }
+    </RadzenPanelMenu>
+}
+
+@code {
+    [Parameter]
+    public List<MenuItemDto> MenuItems { get; set; } = [];
+
+    private void OnMenuItemClick(MenuItemDto item)
+    {
+        if (!string.IsNullOrEmpty(item.Url))
+        {
+            NavigationManager.NavigateTo(item.Url);
+        }
+    }
+
+    private static string GetMenuIcon(string? name)
+    {
+        return name?.ToLower() switch
+        {
+            "dashboard" => "dashboard",
+            "administration" => "admin_panel_settings",
+            "settings" => "settings",
+            "users" => "people",
+            "claims" => "security",
+            "institutions" => "account_balance",
+            "organization" => "corporate_fare",
+            "apps" => "apps",
+            "menu items" => "menu",
+            "resources" => "key",
+            "tenants" => "business",
+            _ => "folder"
+        };
+    }
+}

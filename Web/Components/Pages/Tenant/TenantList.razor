@@ -1,0 +1,28 @@
+@page "/tenants"
+@attribute [Authorize]
+@inject ApiService ApiService
+
+<PageTitle>Tenants - Shell Management Portal</PageTitle>
+
+<RadzenRow class="rz-p-4">
+    <RadzenColumn Size="12">
+        <RadzenText TextStyle="TextStyle.H4">Tenants</RadzenText>
+    </RadzenColumn>
+</RadzenRow>
+
+<RadzenDataGrid @ref="grid" Data="@items" TItem="TenantDto" AllowSorting="true" AllowPaging="true" PageSize="10">
+    <Columns>
+        <RadzenDataGridColumn TItem="TenantDto" Property="Name" Title="Name" />
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    RadzenDataGrid<TenantDto>? grid;
+    IEnumerable<TenantDto>? items;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await ApiService.GetAsync<PagedList<TenantDto>>("tenant/get", AppConfig.AccessToken);
+        items = result?.Items;
+    }
+}
