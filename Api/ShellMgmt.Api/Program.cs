@@ -3,6 +3,7 @@ using ShellMgmt.Application;
 using Serilog;
 using ShellMgmt.Persistence.ApplicationDbContext;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Asp.Versioning;
 using Microsoft.OpenApi.Models;
@@ -40,14 +41,32 @@ builder.Services.AddAuthentication(options =>
 })
 .AddJwtBearer(cfg =>
 {
+    var wso2OidcAuthority = config["WSO2:OidcAuthority"]?.TrimEnd('/')
+        ?? config["WSO2:Authority"]?.TrimEnd('/');
+
+    if (string.IsNullOrEmpty(wso2OidcAuthority))
+    {
+        wso2OidcAuthority = "https://localhost:9443/oauth2/oidcdiscovery";
+    }
+
+    if (wso2OidcAuthority.EndsWith("/token", StringComparison.OrdinalIgnoreCase))
+    {
+        wso2OidcAuthority = wso2OidcAuthority[..^"/token".Length].TrimEnd('/') + "/oidcdiscovery";
+    }
+    else if (wso2OidcAuthority.EndsWith("/oauth2", StringComparison.OrdinalIgnoreCase))
+    {
+        wso2OidcAuthority += "/oidcdiscovery";
+    }
+
     cfg.RequireHttpsMetadata = false;
-    cfg.Authority = config["WSO2:Authority"];
+    cfg.Authority = wso2OidcAuthority;
+    cfg.MetadataAddress = wso2OidcAuthority.TrimEnd('/') + "/.well-known/openid-configuration";
     cfg.IncludeErrorDetails = true;
 
-    // Bypass SSL certificate validation for WSO2 self-signed cert
     cfg.BackchannelHttpHandler = new HttpClientHandler
     {
-        ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+        ServerCertificateCustomValidationCallback =
+            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
     };
 
     cfg.TokenValidationParameters = new TokenValidationParameters()

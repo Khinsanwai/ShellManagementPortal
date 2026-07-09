@@ -59,25 +59,55 @@ builder.Services.AddAuthentication(options =>
 })
 .AddOpenIdConnect(options =>
 {
-    options.Authority = wso2Settings["Authority"];
+    var wso2OidcAuthority = wso2Settings["OidcAuthority"]?.TrimEnd('/')
+        ?? wso2Settings["Authority"]?.TrimEnd('/');
+
+    if (string.IsNullOrEmpty(wso2OidcAuthority))
+    {
+        wso2OidcAuthority = "https://localhost:9443/oauth2/oidcdiscovery";
+    }
+
+    if (wso2OidcAuthority.EndsWith("/token", StringComparison.OrdinalIgnoreCase))
+    {
+        wso2OidcAuthority = wso2OidcAuthority[..^"/token".Length].TrimEnd('/') + "/oidcdiscovery";
+    }
+    else if (wso2OidcAuthority.EndsWith("/oauth2", StringComparison.OrdinalIgnoreCase))
+    {
+        wso2OidcAuthority += "/oidcdiscovery";
+    }
+
+    options.Authority = wso2OidcAuthority;
+    options.MetadataAddress = wso2OidcAuthority.TrimEnd('/') + "/.well-known/openid-configuration";
+
     options.ClientId = wso2Settings["ClientId"];
-    options.ClientSecret = wso2Settings["ClientSecret"];
-    options.ResponseType = OpenIdConnectResponseType.Code;
+    var clientSecret = wso2Settings["ClientSecret"];
+    if (!string.IsNullOrEmpty(clientSecret))
+    {
+        options.ClientSecret = clientSecret;
+    }
+
+    options.ResponseType = "code";
 
     options.MapInboundClaims = false;
     options.TokenValidationParameters.NameClaimType = JwtRegisteredClaimNames.Name;
-    options.TokenValidationParameters.RoleClaimType = "role";
+    options.TokenValidationParameters.RoleClaimType = "groups";
 
     options.SaveTokens = true;
     options.GetClaimsFromUserInfoEndpoint = true;
-    options.Scope.Add("openid");
+
     options.RequireHttpsMetadata = false;
 
-    // Bypass SSL certificate validation for WSO2 self-signed cert
-    options.Backchannel = new HttpClient(new HttpClientHandler
+    options.BackchannelHttpHandler = new HttpClientHandler
     {
-        ServerCertificateCustomValidationCallback = (_, _, _, _) => true
-    });
+        ServerCertificateCustomValidationCallback =
+            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+    };
+
+    options.Scope.Add("openid");
+    options.Scope.Add("profile");
+    options.Scope.Add("email");
+    options.Scope.Add("groups");
+    options.Scope.Add("roles");
 
     options.Events = new OpenIdConnectEvents
     {
