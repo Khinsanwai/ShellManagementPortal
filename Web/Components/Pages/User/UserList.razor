@@ -1,24 +1,229 @@
 @page "/users"
 @attribute [Authorize]
+@inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject DialogService DialogService
+@inject NavigationManager NavigationManager
 
 <PageTitle>Users - Shell Management Portal</PageTitle>
 
 <RadzenRow class="rz-p-4">
     <RadzenColumn Size="12">
-        <RadzenText TextStyle="TextStyle.H4">Users</RadzenText>
-        <RadzenText TextStyle="TextStyle.Subtitle1">User management is handled through WSO2 Identity Server</RadzenText>
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                <RadzenButton Icon="arrow_back" ButtonStyle="ButtonStyle.Light" Click="@(() => NavigationManager.NavigateTo("/"))" Tooltip="Return to Dashboard" />
+                <RadzenText TextStyle="TextStyle.H4">Users</RadzenText>
+            </RadzenStack>
+            <RadzenButton Text="Add User" Icon="add" Click="@CreateUser" />
+        </RadzenStack>
     </RadzenColumn>
 </RadzenRow>
 
-<RadzenCard class="rz-p-4">
-    <RadzenText>
-        Users are managed through the WSO2 Identity Server console.
-        Please access the WSO2 admin console to create, update, or delete users.
-    </RadzenText>
-    <RadzenButton Text="Open WSO2 Console" Icon="open_in_new"
-                  Click="@(() => NavigationManager.NavigateTo("https://localhost:9443/console", true))" />
+<RadzenCard class="rz-p-2 rz-mb-4">
+    <RadzenStack Orientation="Orientation.Horizontal" Gap="1rem" AlignItems="AlignItems.Center">
+        <RadzenTextBox @bind-Value="@searchTerm" Placeholder="Search by username, email, name..." Style="width: 350px" />
+        <RadzenButton Text="Search" Icon="search" ButtonStyle="ButtonStyle.Base" Click="@SearchUsers" />
+        <RadzenButton Text="Clear" ButtonStyle="ButtonStyle.Light" Click="@ClearSearch" />
+    </RadzenStack>
 </RadzenCard>
 
+<RadzenDataGrid @ref="grid" Data="@users" TItem="UserDto" AllowSorting="true" AllowPaging="true" PageSize="10"
+                AllowFiltering="false" ShowPagingSummary="true" LoadData="@LoadData" TotalItems="@total">
+    <Columns>
+        <RadzenDataGridColumn TItem="UserDto" Property="UserName" Title="Username" Sortable="true" Width="150px">
+            <Template Context="user">
+                <strong>@user.UserName</strong>
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="UserDto" Property="FirstName" Title="First Name" Sortable="true" />
+        <RadzenDataGridColumn TItem="UserDto" Property="LastName" Title="Last Name" Sortable="true" />
+        <RadzenDataGridColumn TItem="UserDto" Property="Email" Title="Email" Sortable="true" />
+        <RadzenDataGridColumn TItem="UserDto" Title="Status" Width="100px" Sortable="false">
+            <Template Context="user">
+                @if (user.IsActive)
+                {
+                    <RadzenBadge BadgeStyle="BadgeStyle.Success">Active</RadzenBadge>
+                }
+                else
+                {
+                    <RadzenBadge BadgeStyle="BadgeStyle.Dark">Disabled</RadzenBadge>
+                }
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="UserDto" Title="Groups" Sortable="false">
+            <Template Context="user">
+                @if (user.Groups.Any())
+                {
+                    var displayGroups = string.Join(", ", user.Groups.Take(2));
+                    @displayGroups
+                    if (user.Groups.Count > 2)
+                    {
+                        <span> ...</span>
+                    }
+                }
+                else
+                {
+                    <em class="rz-text-secondary">None</em>
+                }
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="UserDto" Property="CreatedDate" Title="Created Date" Sortable="true">
+            <Template Context="user">
+                @user.CreatedDate.ToString("yyyy-MM-dd HH:mm")
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="UserDto" Title="Actions" Width="280px">
+            <Template Context="user">
+                <RadzenButton Icon="edit" Size="ButtonSize.Small" Tooltip="Edit" Click="@(() => EditUser(user))" />
+                <RadzenButton Icon="lock_reset" Size="ButtonSize.Small" Tooltip="Reset Password" ButtonStyle="ButtonStyle.Warning"
+                              Click="@(() => ResetPassword(user))" />
+                <RadzenButton Icon="delete" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Danger" Tooltip="Delete"
+                              Click="@(() => DeleteUser(user))" />
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
 @code {
-    [Inject] NavigationManager NavigationManager { get; set; } = default!;
+    RadzenDataGrid<UserDto>? grid;
+    List<UserDto>? users;
+    int total;
+    string? searchTerm;
+
+    private async Task LoadData(LoadDataArgs args)
+    {
+        await LoadUsers(args);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsers(null);
+    }
+
+    private async Task LoadUsers(LoadDataArgs? args)
+    {
+        try
+        {
+            var page = (args?.Skip ?? 0) / (args?.Top ?? 10) + 1;
+            var pageSize = args?.Top ?? 10;
+
+            var endpoint = $"user/get?page={page}&pageSize={pageSize}";
+
+            if (!string.IsNullOrEmpty(searchTerm))
+            {
+                endpoint += $"&search={Uri.EscapeDataString(searchTerm)}";
+            }
+
+            var result = await ApiService.GetAsync<UsersListResponse>(endpoint, AppConfig.AccessToken);
+            if (result != null)
+            {
+                users = result.Items;
+                total = result.Total;
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load users: {ex.Message}");
+        }
+    }
+
+    private async Task SearchUsers()
+    {
+        if (grid != null)
+        {
+            await grid.Reload();
+        }
+        else
+        {
+            await LoadUsers(null);
+        }
+    }
+
+    private async Task ClearSearch()
+    {
+        searchTerm = null;
+        if (grid != null)
+        {
+            await grid.Reload();
+        }
+        else
+        {
+            await LoadUsers(null);
+        }
+    }
+
+    private async Task CreateUser()
+    {
+        var result = await DialogService.OpenAsync<UserForm>("Add User",
+            new Dictionary<string, object?> { { "IsEdit", false } },
+            new DialogOptions { Width = "600px", Resizable = true, Draggable = true });
+        if (result == true)
+        {
+            NotificationService.Notify(NotificationSeverity.Success, "Created", "User created successfully");
+            await ReloadGrid();
+        }
+    }
+
+    private async Task EditUser(UserDto user)
+    {
+        var result = await DialogService.OpenAsync<UserForm>("Edit User",
+            new Dictionary<string, object?> { { "IsEdit", true }, { "UserId", user.Id } },
+            new DialogOptions { Width = "600px", Resizable = true, Draggable = true });
+        if (result == true)
+        {
+            NotificationService.Notify(NotificationSeverity.Success, "Updated", "User updated successfully");
+            await ReloadGrid();
+        }
+    }
+
+    private async Task ResetPassword(UserDto user)
+    {
+        var result = await DialogService.OpenAsync<UserResetPassword>("Reset Password",
+            new Dictionary<string, object?> { { "UserId", user.Id }, { "UserName", user.UserName } },
+            new DialogOptions { Width = "450px", Resizable = true, Draggable = true });
+        if (result == true)
+        {
+            NotificationService.Notify(NotificationSeverity.Success, "Success", "Password reset successfully");
+        }
+    }
+
+    private async Task DeleteUser(UserDto user)
+    {
+        var confirmed = await DialogService.Confirm(
+            $"Are you sure you want to delete user '{user.UserName}'?\n\nThis action cannot be undone.",
+            "Delete User",
+            new ConfirmOptions { OkButtonText = "Delete", CancelButtonText = "Cancel" });
+
+        if (confirmed == true)
+        {
+            try
+            {
+                await ApiService.DeleteAsync($"user/delete/{user.Id}", AppConfig.AccessToken);
+                NotificationService.Notify(NotificationSeverity.Success, "Deleted", $"User '{user.UserName}' deleted successfully");
+                await ReloadGrid();
+            }
+            catch (Exception ex)
+            {
+                NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to delete user: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task ReloadGrid()
+    {
+        if (grid != null)
+        {
+            await grid.Reload();
+        }
+        else
+        {
+            await LoadUsers(null);
+        }
+    }
+
+    public class UsersListResponse
+    {
+        public List<UserDto> Items { get; set; } = new();
+        public int Total { get; set; }
+    }
 }

@@ -1,0 +1,249 @@
+@page "/user-menu-assign"
+@attribute [Authorize]
+@inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject NavigationManager NavigationManager
+
+<PageTitle>User Menu Assignment - Shell Management Portal</PageTitle>
+
+<RadzenRow class="rz-p-4">
+    <RadzenColumn Size="12">
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                <RadzenButton Icon="arrow_back" ButtonStyle="ButtonStyle.Light" Click="@(() => NavigationManager.NavigateTo("/"))" Tooltip="Return to Dashboard" />
+                <RadzenText TextStyle="TextStyle.H4">User Menu Assignment</RadzenText>
+            </RadzenStack>
+            <RadzenButton Text="Save Assignments" Icon="save" ButtonStyle="ButtonStyle.Primary"
+                          Click="@SaveAssignments" Disabled="@isSaving" Busy="@isSaving" />
+        </RadzenStack>
+    </RadzenColumn>
+</RadzenRow>
+
+<RadzenRow Gap="1rem">
+    @* Left Panel: Users List *@
+    <RadzenColumn Size="5">
+        <RadzenCard>
+            <RadzenText TextStyle="TextStyle.H5" class="rz-mb-3">WSO2 Users</RadzenText>
+            <RadzenTextBox @bind-Value="@searchTerm" Placeholder="Search users..." Style="width: 100%; margin-bottom: 1rem;"
+                           @onkeyup="@OnSearchKeyUp" />
+            <RadzenDataGrid @ref="userGrid" Data="@users" TItem="UserDto" AllowSorting="true" AllowPaging="true" PageSize="10"
+                            ShowPagingSummary="true" SelectionMode="DataGridSelectionMode.Single" @bind-Value="@selectedUsers"
+                            RowSelect="@OnUserSelected">
+                <Columns>
+                    <RadzenDataGridColumn TItem="UserDto" Property="UserName" Title="Username" Sortable="true">
+                        <Template Context="user">
+                            <strong>@user.UserName</strong>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="UserDto" Title="Name" Sortable="false">
+                        <Template Context="user">
+                            @user.FirstName @user.LastName
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        </RadzenCard>
+    </RadzenColumn>
+
+    @* Right Panel: Menu Assignments *@
+    <RadzenColumn Size="7">
+        <RadzenCard>
+            @if (selectedUser != null)
+            {
+                <RadzenText TextStyle="TextStyle.H5" class="rz-mb-3">
+                    Menus for <strong>@selectedUser.UserName</strong>
+                </RadzenText>
+
+                @if (allMenuItems != null && allMenuItems.Count > 0)
+                {
+                    <RadzenStack Gap="0.5rem">
+                        @foreach (var menu in allMenuItems.Where(x => x.ParentId == null || x.ParentId == Guid.Empty).OrderBy(x => x.MenuOrder).ToList())
+                        {
+                            var childItems = allMenuItems
+                                .Where(x => x.ParentId == menu.Id)
+                                .OrderBy(x => x.MenuOrder)
+                                .ToList();
+
+                            <RadzenCard Variant="Variant.Outlined" class="rz-p-3">
+                                <RadzenStack Gap="0.5rem">
+                                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                                        <RadzenCheckBox Value="@(menu.Id.HasValue && IsMenuAssigned(menu.Id.Value))"
+                                                        TValue="bool"
+                                                        ValueChanged="@((bool val) => { if (menu.Id.HasValue) ToggleMenu(menu.Id.Value, val); })" />
+                                        <RadzenText TextStyle="TextStyle.Subtitle1"><strong>@menu.Name</strong></RadzenText>
+                                    </RadzenStack>
+
+                                    @if (childItems.Any())
+                                    {
+                                        <RadzenStack Gap="0.25rem" class="rz-ml-4">
+                                            @foreach (var child in childItems)
+                                            {
+                                                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                                                    <RadzenCheckBox Value="@(child.Id.HasValue && IsMenuAssigned(child.Id.Value))"
+                                                                    TValue="bool"
+                                                                    ValueChanged="@((bool val) => { if (child.Id.HasValue) ToggleMenu(child.Id.Value, val); })" />
+                                                    <RadzenText TextStyle="TextStyle.Body2">@child.Name</RadzenText>
+                                                    @if (!string.IsNullOrEmpty(child.Url))
+                                                    {
+                                                        <RadzenBadge BadgeStyle="BadgeStyle.Info">@child.Url</RadzenBadge>
+                                                    }
+                                                </RadzenStack>
+                                            }
+                                        </RadzenStack>
+                                    }
+                                </RadzenStack>
+                            </RadzenCard>
+                        }
+                    </RadzenStack>
+                }
+                else
+                {
+                    <RadzenProgressBarCircular ProgressBarStyle="ProgressBarStyle.Primary" Value="100" ShowValue="false" Mode="ProgressBarMode.Indeterminate" />
+                }
+            }
+            else
+            {
+                <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="min-height: 300px;">
+                    <RadzenIcon Icon="security" Style="font-size: 48px; color: var(--rz-text-disabled-color);" />
+                    <RadzenText TextStyle="TextStyle.H6" class="rz-text-secondary">Select a user to manage menu access</RadzenText>
+                </RadzenStack>
+            }
+        </RadzenCard>
+    </RadzenColumn>
+</RadzenRow>
+
+@code {
+    RadzenDataGrid<UserDto>? userGrid;
+    List<UserDto>? users;
+    IList<UserDto>? selectedUsers;
+    UserDto? selectedUser;
+
+    List<MenuItemDto>? allMenuItems;
+    HashSet<Guid> assignedMenuIds = new();
+    string? searchTerm;
+    bool isSaving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsers();
+        await LoadAllMenus();
+    }
+
+    private async Task LoadUsers()
+    {
+        try
+        {
+            var result = await ApiService.GetAsync<UsersListResponse>("user/get?pageSize=100", AppConfig.AccessToken);
+            users = result?.Items;
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load users: {ex.Message}");
+        }
+    }
+
+    private async Task LoadAllMenus()
+    {
+        try
+        {
+            var result = await ApiService.GetAsync<PagedList<MenuItemDto>>("menuitem/get?Take=100", AppConfig.AccessToken);
+            allMenuItems = result?.Items?.ToList();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load menus: {ex.Message}");
+        }
+    }
+
+    private async Task OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            try
+            {
+                var endpoint = "user/get?pageSize=100";
+                if (!string.IsNullOrEmpty(searchTerm))
+                    endpoint += $"&search={Uri.EscapeDataString(searchTerm)}";
+
+                var result = await ApiService.GetAsync<UsersListResponse>(endpoint, AppConfig.AccessToken);
+                users = result?.Items;
+                if (userGrid != null) await userGrid.Reload();
+            }
+            catch (Exception ex)
+            {
+                NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to search: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task OnUserSelected(UserDto user)
+    {
+        selectedUser = user;
+        await LoadUserMenus();
+    }
+
+    private async Task LoadUserMenus()
+    {
+        if (selectedUser == null) return;
+
+        try
+        {
+            var assignments = await ApiService.GetAsync<List<UserMenuAssignmentDto>>(
+                $"usermenu/GetUserMenus/{selectedUser.Id}", AppConfig.AccessToken);
+
+            assignedMenuIds = assignments?.Select(a => a.MenuItemId).ToHashSet() ?? new HashSet<Guid>();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load user menus: {ex.Message}");
+            assignedMenuIds = new HashSet<Guid>();
+        }
+        StateHasChanged();
+    }
+
+    private bool IsMenuAssigned(Guid menuId) => assignedMenuIds.Contains(menuId);
+
+    private void ToggleMenu(Guid menuId, bool value)
+    {
+        if (value)
+            assignedMenuIds.Add(menuId);
+        else
+            assignedMenuIds.Remove(menuId);
+    }
+
+    private async Task SaveAssignments()
+    {
+        if (selectedUser == null) return;
+
+        isSaving = true;
+        StateHasChanged();
+
+        try
+        {
+            await ApiService.PostAsync("usermenu/AssignMenus", new
+            {
+                wso2UserId = selectedUser.Id,
+                wso2UserName = selectedUser.UserName,
+                menuItemIds = assignedMenuIds.ToList()
+            }, AppConfig.AccessToken);
+
+            NotificationService.Notify(NotificationSeverity.Success, "Saved",
+                $"Menu assignments updated for {selectedUser.UserName}");
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to save: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    public class UsersListResponse
+    {
+        public List<UserDto> Items { get; set; } = new();
+        public int Total { get; set; }
+    }
+}

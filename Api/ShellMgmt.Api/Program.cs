@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Asp.Versioning;
 using Microsoft.OpenApi.Models;
+using ShellMgmt.Api.Services;
 
 var logger = Log.Logger = new LoggerConfiguration()
     .Enrich.FromLogContext()
@@ -21,16 +22,14 @@ ConfigurationManager config = builder.Configuration;
 
 builder.Host.UseSerilog((_, cfg) => cfg.ReadFrom.Configuration(builder.Configuration));
 
-// Database - MySQL
+// Database - SQL Server
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseMySql(config.GetConnectionString("WriteDatabaseConnection"),
-    ServerVersion.AutoDetect(config.GetConnectionString("WriteDatabaseConnection"))));
+    options.UseSqlServer(config.GetConnectionString("WriteDatabaseConnection")));
 
 builder.Services.AddDbContext<ReadDbContext>(options =>
-    options.UseMySql(config.GetConnectionString("ReadDatabaseConnection"),
-    ServerVersion.AutoDetect(config.GetConnectionString("ReadDatabaseConnection"))));
+    options.UseSqlServer(config.GetConnectionString("ReadDatabaseConnection")));
 
-builder.Services.AddHttpClient();
+builder.Services.AddScoped<ScimService>();
 builder.Services.AddControllers();
 
 // WSO2 JWT Bearer Authentication

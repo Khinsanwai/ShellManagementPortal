@@ -6,6 +6,7 @@ using Microsoft.JSInterop;
 using Radzen;
 using Radzen.Blazor;
 using ShellMgmt.Domain.MenuItemModels;
+using ShellMgmt.Domain.UserModels;
 using ShellMgmt.Web.Constants;
 using ShellMgmt.Web.Services;
 
@@ -22,6 +23,7 @@ public partial class MainLayout
     [Inject] protected TenantService TenantService { get; set; } = default!;
     [Inject] protected ResourceService ResourceService { get; set; } = default!;
     [Inject] protected ILogger<MainLayout> Logger { get; set; } = default!;
+    [Inject] protected ApiService ApiService { get; set; } = default!;
 
     private bool sidebarExpanded = true;
     private List<MenuItemDto>? menuItems;
@@ -53,7 +55,35 @@ public partial class MainLayout
                 }
 
                 var menuItemList = await MenuService.GetMenuItemsAsync(AppConfig.AccessToken);
-                menuItems = menuItemList ?? [];
+                var allMenus = menuItemList ?? [];
+
+                // Get user's assigned menus
+                try
+                {
+                    var userName = Context.HttpContext?.User.Identity?.Name ?? string.Empty;
+                    var userMenus = await GetUserAssignedMenuIds(userName);
+                    if (userMenus != null && userMenus.Count > 0)
+                    {
+                        // Filter: show assigned menus + their parent menus
+                        var assignedAndParents = new HashSet<Guid>(userMenus);
+                        foreach (var menuId in userMenus)
+                        {
+                            var menu = allMenus.FirstOrDefault(m => m.Id == menuId);
+                            if (menu?.ParentId != null && menu.ParentId != Guid.Empty)
+                                assignedAndParents.Add(menu.ParentId.Value);
+                        }
+                        menuItems = allMenus.Where(m => assignedAndParents.Contains(m.Id ?? Guid.Empty)).ToList();
+                    }
+                    else
+                    {
+                        // No assignments = show all menus (admin fallback)
+                        menuItems = allMenus;
+                    }
+                }
+                catch
+                {
+                    menuItems = allMenus;
+                }
 
                 Logger.LogInformation("Menu Count: {Count}", menuItems.Count);
             }
@@ -103,6 +133,53 @@ public partial class MainLayout
         var handler = new JwtSecurityTokenHandler();
         var jwtToken = handler.ReadJwtToken(token);
         return jwtToken.ValidTo < DateTime.UtcNow;
+    }
+
+    private void OnMenuItemClick(MenuItemDto item)
+    {
+        if (!string.IsNullOrEmpty(item.Url))
+        {
+            NavigationManager.NavigateTo(item.Url);
+        }
+    }
+
+    private static string GetMenuIcon(string? name)
+    {
+        return name?.ToLower() switch
+        {
+            "dashboard" => "dashboard",
+            "administration" => "admin_panel_settings",
+            "settings" => "settings",
+            "users" => "people",
+            "claims" => "security",
+            "institutions" => "account_balance",
+            "organization" => "corporate_fare",
+            "apps" => "apps",
+            "menu items" => "menu",
+            "user groups" => "group_add",
+            "resources" => "key",
+            "tenants" => "business",
+            _ => "folder"
+        };
+    }
+
+    private async Task<List<Guid>?> GetUserAssignedMenuIds(string wso2UserName)
+    {
+        try
+        {
+            // Get all mappings and filter by username
+            var allMappings = await ApiService.GetAsync<List<UserMenuAssignmentDto>>("usermenu/GetAllMappings", AppConfig.AccessToken);
+            if (allMappings == null) return null;
+
+            var userMappings = allMappings.Where(m =>
+                string.Equals(m.Wso2UserName, wso2UserName, StringComparison.OrdinalIgnoreCase)).ToList();
+
+            return userMappings.Select(m => m.MenuItemId).ToList();
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private async Task Logout()

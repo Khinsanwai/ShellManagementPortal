@@ -3,33 +3,126 @@
 @inject ApiService ApiService
 @inject NotificationService NotificationService
 @inject DialogService DialogService
+@inject NavigationManager NavigationManager
 
 <PageTitle>Menu Items - Shell Management Portal</PageTitle>
 
 <RadzenRow class="rz-p-4">
     <RadzenColumn Size="12">
         <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
-            <RadzenText TextStyle="TextStyle.H4">Menu Items</RadzenText>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                <RadzenButton Icon="arrow_back" ButtonStyle="ButtonStyle.Light" Click="@(() => NavigationManager.NavigateTo("/"))" Tooltip="Return to Dashboard" />
+                <RadzenText TextStyle="TextStyle.H4">Menu Items</RadzenText>
+            </RadzenStack>
+            <RadzenButton Text="Add Menu Item" Icon="add" Click="@CreateMenuItem" />
         </RadzenStack>
     </RadzenColumn>
 </RadzenRow>
 
-<RadzenDataGrid @ref="grid" Data="@items" TItem="MenuItemDto" AllowSorting="true" AllowPaging="true" PageSize="10">
+<RadzenDataGrid @ref="grid" Data="@items" TItem="MenuItemDto" AllowSorting="true" AllowPaging="true" PageSize="10"
+                ShowPagingSummary="true">
     <Columns>
-        <RadzenDataGridColumn TItem="MenuItemDto" Property="Name" Title="Name" />
-        <RadzenDataGridColumn TItem="MenuItemDto" Property="Url" Title="URL" />
-        <RadzenDataGridColumn TItem="MenuItemDto" Property="ParentId" Title="Parent ID" />
-        <RadzenDataGridColumn TItem="MenuItemDto" Property="MenuOrder" Title="Order" />
+        <RadzenDataGridColumn TItem="MenuItemDto" Property="Name" Title="Name" Sortable="true" Width="200px">
+            <Template Context="item">
+                <strong>@item.Name</strong>
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="MenuItemDto" Property="Url" Title="URL" Sortable="true">
+            <Template Context="item">
+                @if (!string.IsNullOrEmpty(item.Url))
+                {
+                    <RadzenBadge BadgeStyle="BadgeStyle.Info">@item.Url</RadzenBadge>
+                }
+                else
+                {
+                    <em class="rz-text-secondary">Parent menu</em>
+                }
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="MenuItemDto" Title="Parent" Sortable="false">
+            <Template Context="item">
+                @if (item.ParentId.HasValue)
+                {
+                    var parent = allItems?.FirstOrDefault(m => m.Id == item.ParentId.Value);
+                    @(parent?.Name ?? item.ParentId.ToString())
+                }
+                else
+                {
+                    <em class="rz-text-secondary">Top level</em>
+                }
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="MenuItemDto" Property="MenuOrder" Title="Order" Sortable="true" Width="100px" />
+        <RadzenDataGridColumn TItem="MenuItemDto" Title="Actions" Width="180px">
+            <Template Context="item">
+                <RadzenButton Icon="edit" Size="ButtonSize.Small" Tooltip="Edit" Click="@(() => EditMenuItem(item))" />
+                <RadzenButton Icon="delete" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Danger" Tooltip="Delete"
+                              Click="@(() => DeleteMenuItem(item))" />
+            </Template>
+        </RadzenDataGridColumn>
     </Columns>
 </RadzenDataGrid>
 
 @code {
     RadzenDataGrid<MenuItemDto>? grid;
-    IEnumerable<MenuItemDto>? items;
+    List<MenuItemDto>? items;
+    List<MenuItemDto>? allItems;
 
     protected override async Task OnInitializedAsync()
     {
-        var result = await ApiService.GetAsync<PagedList<MenuItemDto>>("menuitem/get", AppConfig.AccessToken);
-        items = result?.Items;
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            var result = await ApiService.GetAsync<PagedList<MenuItemDto>>("menuitem/get?Take=100", AppConfig.AccessToken);
+            allItems = result?.Items?.ToList();
+            items = allItems;
+            if (grid != null) await grid.Reload();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load menu items: {ex.Message}");
+        }
+    }
+
+    private async Task CreateMenuItem()
+    {
+        var result = await DialogService.OpenAsync<MenuItemForm>("Add Menu Item",
+            new Dictionary<string, object?>(),
+            new DialogOptions { Width = "500px", Resizable = true, Draggable = true });
+        if (result == true) await LoadData();
+    }
+
+    private async Task EditMenuItem(MenuItemDto item)
+    {
+        var result = await DialogService.OpenAsync<MenuItemForm>("Edit Menu Item",
+            new Dictionary<string, object?> { { "MenuItemId", item.Id } },
+            new DialogOptions { Width = "500px", Resizable = true, Draggable = true });
+        if (result == true) await LoadData();
+    }
+
+    private async Task DeleteMenuItem(MenuItemDto item)
+    {
+        var confirmed = await DialogService.Confirm(
+            $"Are you sure you want to delete menu item '{item.Name}'?\n\nThis action cannot be undone.",
+            "Delete Menu Item",
+            new ConfirmOptions { OkButtonText = "Delete", CancelButtonText = "Cancel" });
+
+        if (confirmed == true)
+        {
+            try
+            {
+                await ApiService.DeleteAsync($"menuitem/delete/{item.Id}", AppConfig.AccessToken);
+                NotificationService.Notify(NotificationSeverity.Success, "Deleted", $"Menu item '{item.Name}' deleted successfully");
+                await LoadData();
+            }
+            catch (Exception ex)
+            {
+                NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to delete menu item: {ex.Message}");
+            }
+        }
     }
 }

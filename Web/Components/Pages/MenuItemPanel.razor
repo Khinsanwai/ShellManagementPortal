@@ -8,25 +8,37 @@
 
 @if (MenuItems != null)
 {
-    <RadzenPanelMenu>
-        @foreach (var menu in MenuItems.Where(x => x.ParentId == null || x.ParentId == Guid.Empty).OrderBy(x => x.MenuOrder).ToList())
-        {
-            var childItems = MenuItems
-                .Where(x => x.ParentId == menu.Id)
-                .OrderBy(x => x.MenuOrder)
-                .ToList();
-
-            if (childItems.Any())
+    <RadzenTabs Orientation="Orientation.Vertical" RenderMode="TabRenderMode.Client">
+        <Tabs>
+            @foreach (var menu in MenuItems.Where(x => x.ParentId == null || x.ParentId == Guid.Empty).OrderBy(x => x.MenuOrder).ToList())
             {
-                <RadzenPanelMenuItem Text="@menu.Name" Icon="@GetMenuIcon(menu.Name)">
-                    @foreach (var item in childItems)
-                    {
-                        <RadzenPanelMenuItem Text="@item.Name" Click="@(() => OnMenuItemClick(item))" />
-                    }
-                </RadzenPanelMenuItem>
+                var childItems = MenuItems
+                    .Where(x => x.ParentId == menu.Id)
+                    .OrderBy(x => x.MenuOrder)
+                    .ToList();
+
+                @if (childItems.Any())
+                {
+                    <RadzenTabsItem Text="@menu.Name" Icon="@GetMenuIcon(menu.Name)">
+                        <RadzenStack Gap="0.25rem">
+                            @foreach (var item in childItems)
+                            {
+                                <RadzenButton Text="@item.Name" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small"
+                                              class="rz-text-align-start rz-w-100" Click="@(() => OnMenuItemClick(item))" />
+                            }
+                        </RadzenStack>
+                    </RadzenTabsItem>
+                }
+                else if (!string.IsNullOrEmpty(menu.Url))
+                {
+                    <RadzenTabsItem Text="@menu.Name" Icon="@GetMenuIcon(menu.Name)">
+                        <RadzenButton Text="@($"Go to {menu.Name}")" ButtonStyle="ButtonStyle.Primary" Size="ButtonSize.Small"
+                                      Click="@(() => OnMenuItemClick(menu))" />
+                    </RadzenTabsItem>
+                }
             }
-        }
-    </RadzenPanelMenu>
+        </Tabs>
+    </RadzenTabs>
 }
 
 @code {
@@ -54,6 +66,7 @@
             "organization" => "corporate_fare",
             "apps" => "apps",
             "menu items" => "menu",
+            "user groups" => "group_add",
             "resources" => "key",
             "tenants" => "business",
             _ => "folder"

@@ -18,6 +18,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Institution> Institution { get; set; }
     public DbSet<OrgUnit> OrgUnit { get; set; }
     public DbSet<App> App { get; set; }
+    public DbSet<UserMenuAssignment> UserMenuAssignment { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -28,5 +29,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<Institution>().ToTable("Institution", "appshell");
         modelBuilder.Entity<OrgUnit>().ToTable("OrgUnit", "appshell");
         modelBuilder.Entity<App>().ToTable("App", "appshell");
+        modelBuilder.Entity<UserMenuAssignment>().ToTable("UserMenuAssignment", "appshell");
+
+        modelBuilder.Entity<UserMenuAssignment>()
+            .HasOne(ua => ua.MenuItem)
+            .WithMany()
+            .HasForeignKey(ua => ua.MenuItemId);
     }
 }

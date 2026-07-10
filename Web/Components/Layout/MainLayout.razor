@@ -10,25 +10,48 @@
 
 <RadzenLayout style="grid-template-areas: 'rz-sidebar rz-header' 'rz-sidebar rz-body';">
     <RadzenHeader>
-        <RadzenRow JustifyContent="JustifyContent.Start" AlignItems="AlignItems.Center" Gap="0">
-            <RadzenColumn Size="5">
-                <RadzenSidebarToggle Click="@SidebarToggleClick"></RadzenSidebarToggle>
-            </RadzenColumn>
-            <RadzenColumn Size="7">
-                <RadzenStack AlignItems="AlignItems.Center" Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End">
-                    <RadzenAppearanceToggle />
-                    <RadzenProfileMenu Visible="@(Context.HttpContext?.User.Identity?.IsAuthenticated ?? false)" Click="@ProfileMenuClick">
-                        <ChildContent>
-                            <RadzenProfileMenuItem Text="Change Password" Value="ChangePassword" Icon="vpn_key" />
-                            <RadzenProfileMenuItem Text="Logout" Value="Logout" Icon="power_settings_new" />
-                        </ChildContent>
-                        <Template>
-                            @Context.HttpContext?.User.Identity?.Name
-                        </Template>
-                    </RadzenProfileMenu>
-                </RadzenStack>
-            </RadzenColumn>
-        </RadzenRow>
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0">
+            <RadzenSidebarToggle Click="@SidebarToggleClick" />
+            @if (menuItems != null)
+            {
+                @foreach (var menu in menuItems.Where(x => x.ParentId == null || x.ParentId == Guid.Empty).OrderBy(x => x.MenuOrder).ToList())
+                {
+                    var childItems = menuItems
+                        .Where(x => x.ParentId == menu.Id)
+                        .OrderBy(x => x.MenuOrder)
+                        .ToList();
+
+                    @if (childItems.Any())
+                    {
+                        <RadzenMenu>
+                            <RadzenMenuItem Text="@menu.Name" Icon="@GetMenuIcon(menu.Name)">
+                                @foreach (var item in childItems)
+                                {
+                                    <RadzenMenuItem Text="@item.Name" Click="@(() => OnMenuItemClick(item))" />
+                                }
+                            </RadzenMenuItem>
+                        </RadzenMenu>
+                    }
+                    else if (!string.IsNullOrEmpty(menu.Url))
+                    {
+                        <RadzenButton Text="@menu.Name" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small"
+                                      class="rz-mx-1" Click="@(() => OnMenuItemClick(menu))" />
+                    }
+                }
+            }
+            <RadzenStack AlignItems="AlignItems.Center" Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" class="rz-ml-auto rz-mr-2">
+                <RadzenAppearanceToggle />
+                <RadzenProfileMenu Visible="@(Context.HttpContext?.User.Identity?.IsAuthenticated ?? false)" Click="@ProfileMenuClick">
+                    <ChildContent>
+                        <RadzenProfileMenuItem Text="Change Password" Value="ChangePassword" Icon="vpn_key" />
+                        <RadzenProfileMenuItem Text="Logout" Value="Logout" Icon="power_settings_new" />
+                    </ChildContent>
+                    <Template>
+                        @Context.HttpContext?.User.Identity?.Name
+                    </Template>
+                </RadzenProfileMenu>
+            </RadzenStack>
+        </RadzenStack>
     </RadzenHeader>
     <RadzenBody Expanded="@sidebarExpanded" Style="padding:0; overflow: auto;">
         @Body

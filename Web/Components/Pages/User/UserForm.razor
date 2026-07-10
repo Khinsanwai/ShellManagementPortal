@@ -1,0 +1,252 @@
+@inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject DialogService DialogService
+
+<RadzenTemplateForm Data="@model" TItem="UserDto" Submit="@OnSubmit">
+    <RadzenStack Gap="1rem">
+        @if (!IsEdit)
+        {
+            <RadzenFormField Text="Username">
+                <RadzenTextBox @bind-Value="model.UserName" Name="UserName" />
+                <RadzenRequiredValidator Component="UserName" Text="Username is required" />
+            </RadzenFormField>
+        }
+
+        @if (!IsEdit)
+        {
+            <RadzenFormField Text="Password">
+                <RadzenPassword @bind-Value="model.Password" Name="Password" />
+                <RadzenRequiredValidator Component="Password" Text="Password is required" />
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary">
+                    Minimum 8 characters with uppercase, lowercase, and a number
+                </RadzenText>
+            </RadzenFormField>
+        }
+
+        <RadzenRow>
+            <RadzenColumn Size="6">
+                <RadzenFormField Text="First Name">
+                    <RadzenTextBox @bind-Value="model.FirstName" Name="FirstName" />
+                    <RadzenRequiredValidator Component="FirstName" Text="First name is required" />
+                </RadzenFormField>
+            </RadzenColumn>
+            <RadzenColumn Size="6">
+                <RadzenFormField Text="Last Name">
+                    <RadzenTextBox @bind-Value="model.LastName" Name="LastName" />
+                    <RadzenRequiredValidator Component="LastName" Text="Last name is required" />
+                </RadzenFormField>
+            </RadzenColumn>
+        </RadzenRow>
+
+        <RadzenFormField Text="Email">
+            <RadzenTextBox @bind-Value="model.Email" Name="Email" />
+            <RadzenRequiredValidator Component="Email" Text="Email is required" />
+            <RadzenEmailValidator Component="Email" Text="Enter a valid email address" />
+        </RadzenFormField>
+
+        @if (IsEdit)
+        {
+            <RadzenFormField Text="Status">
+                <RadzenSwitch @bind-Value="model.IsActive" />
+                <RadzenText class="rz-ml-2" TextStyle="TextStyle.Body1">
+                    @(model.IsActive ? "Active" : "Disabled")
+                </RadzenText>
+            </RadzenFormField>
+        }
+
+        <RadzenFormField Text="Phone">
+            <RadzenTextBox @bind-Value="model.Phone" Name="Phone" Placeholder="Optional" />
+        </RadzenFormField>
+
+        <RadzenAccordion>
+            <RadzenAccordionItem Text="Address (Optional)">
+                <RadzenStack Gap="1rem">
+                    <RadzenFormField Text="Street Address">
+                        <RadzenTextBox @bind-Value="model.StreetAddress" />
+                    </RadzenFormField>
+                    <RadzenRow>
+                        <RadzenColumn Size="6">
+                            <RadzenFormField Text="City / Locality">
+                                <RadzenTextBox @bind-Value="model.Locality" />
+                            </RadzenFormField>
+                        </RadzenColumn>
+                        <RadzenColumn Size="6">
+                            <RadzenFormField Text="State / Region">
+                                <RadzenTextBox @bind-Value="model.Region" />
+                            </RadzenFormField>
+                        </RadzenColumn>
+                    </RadzenRow>
+                    <RadzenRow>
+                        <RadzenColumn Size="6">
+                            <RadzenFormField Text="Postal Code">
+                                <RadzenTextBox @bind-Value="model.PostalCode" />
+                            </RadzenFormField>
+                        </RadzenColumn>
+                        <RadzenColumn Size="6">
+                            <RadzenFormField Text="Country">
+                                <RadzenTextBox @bind-Value="model.Country" />
+                            </RadzenFormField>
+                        </RadzenColumn>
+                    </RadzenRow>
+                </RadzenStack>
+            </RadzenAccordionItem>
+        </RadzenAccordion>
+
+        @if (availableGroups != null && availableGroups.Count > 0)
+        {
+            <RadzenAccordion>
+                <RadzenAccordionItem Text="Group Assignments">
+                    <RadzenStack Gap="0.5rem">
+                        @foreach (var g in availableGroups)
+                        {
+                            <RadzenCheckBox @bind-Value="g.IsAssigned" Label="@g.GroupName" />
+                        }
+                        @if (availableGroups.Count == 0)
+                        {
+                            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary">No groups available</RadzenText>
+                        }
+                    </RadzenStack>
+                </RadzenAccordionItem>
+            </RadzenAccordion>
+        }
+
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem">
+            <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Light" Click="@(() => DialogService.Close(false))" />
+            <RadzenButton Text="Save" ButtonType="ButtonType.Submit" ButtonStyle="ButtonStyle.Primary" />
+        </RadzenStack>
+    </RadzenStack>
+</RadzenTemplateForm>
+
+@code {
+    [Parameter] public bool IsEdit { get; set; }
+    [Parameter] public string? UserId { get; set; }
+
+    private UserDto model = new();
+    private List<UserGroupAssignment>? availableGroups;
+
+    protected override async Task OnInitializedAsync()
+    {
+        model.IsActive = true;
+
+        // Load all available groups for assignment
+        await LoadGroups();
+
+        if (IsEdit && !string.IsNullOrEmpty(UserId))
+        {
+            try
+            {
+                var result = await ApiService.GetAsync<UserDto>($"user/get/{UserId}", AppConfig.AccessToken);
+                if (result != null)
+                {
+                    model = result;
+                }
+            }
+            catch (Exception ex)
+            {
+                NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load user: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task LoadGroups()
+    {
+        try
+        {
+            var groupsResult = await ApiService.GetAsync<GroupListResponse>("group/get?pageSize=100", AppConfig.AccessToken);
+            if (groupsResult?.Items != null)
+            {
+                if (IsEdit && !string.IsNullOrEmpty(UserId))
+                {
+                    // Load assignments for this user
+                    var assignments = await ApiService.GetAsync<List<UserGroupAssignment>>($"user/GetUserAssignments/{UserId}", AppConfig.AccessToken);
+                    availableGroups = assignments ?? groupsResult.Items.Select(g => new UserGroupAssignment
+                    {
+                        GroupId = g.Id,
+                        GroupName = g.DisplayName,
+                        IsAssigned = false
+                    }).ToList();
+                }
+                else
+                {
+                    // New user - all groups unchecked
+                    availableGroups = groupsResult.Items.Select(g => new UserGroupAssignment
+                    {
+                        GroupId = g.Id,
+                        GroupName = g.DisplayName,
+                        IsAssigned = false
+                    }).ToList();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Warning, "Warning", $"Could not load groups: {ex.Message}");
+        }
+    }
+
+    private async Task OnSubmit(UserDto user)
+    {
+        try
+        {
+            if (IsEdit && !string.IsNullOrEmpty(UserId))
+            {
+                await ApiService.PutAsync($"user/update/{UserId}", new
+                {
+                    model.FirstName,
+                    model.LastName,
+                    model.Email,
+                    model.Phone,
+                    model.IsActive
+                }, AppConfig.AccessToken);
+
+                // Sync group assignments
+                var selectedGroupIds = availableGroups?.Where(g => g.IsAssigned).Select(g => g.GroupId).ToList() ?? new();
+                await ApiService.PostAsync($"user/SyncUserGroups/{UserId}", new { groupIds = selectedGroupIds }, AppConfig.AccessToken);
+
+                NotificationService.Notify(NotificationSeverity.Success, "Updated", "User updated successfully");
+            }
+            else
+            {
+                // Create user first
+                var createdUser = await ApiService.PostAsync<UserDto>("user/create", new
+                {
+                    model.UserName,
+                    model.Password,
+                    model.FirstName,
+                    model.LastName,
+                    model.Email,
+                    model.Phone,
+                    model.StreetAddress,
+                    model.Locality,
+                    model.Region,
+                    model.PostalCode,
+                    model.Country
+                }, AppConfig.AccessToken);
+
+                // Assign groups to the newly created user
+                if (createdUser != null)
+                {
+                    var selectedGroupIds = availableGroups?.Where(g => g.IsAssigned).Select(g => g.GroupId).ToList() ?? new();
+                    if (selectedGroupIds.Any())
+                    {
+                        await ApiService.PostAsync($"user/SyncUserGroups/{createdUser.Id}", new { groupIds = selectedGroupIds }, AppConfig.AccessToken);
+                    }
+                }
+
+                NotificationService.Notify(NotificationSeverity.Success, "Created", "User created successfully");
+            }
+
+            DialogService.Close(true);
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", ex.Message);
+        }
+    }
+
+    public class GroupListResponse
+    {
+        public List<GroupDto> Items { get; set; } = new();
+        public int Total { get; set; }
+    }
+}

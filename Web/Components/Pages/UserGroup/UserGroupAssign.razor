@@ -1,0 +1,255 @@
+@page "/user-groups"
+@attribute [Authorize]
+@inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject DialogService DialogService
+@inject NavigationManager NavigationManager
+
+<PageTitle>User Groups - Shell Management Portal</PageTitle>
+
+<RadzenRow class="rz-p-4">
+    <RadzenColumn Size="12">
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                <RadzenButton Icon="arrow_back" ButtonStyle="ButtonStyle.Light" Click="@(() => NavigationManager.NavigateTo("/"))" Tooltip="Return to Dashboard" />
+                <RadzenText TextStyle="TextStyle.H4">User Groups Assignment</RadzenText>
+            </RadzenStack>
+            <RadzenButton Text="Create Group" Icon="add" ButtonStyle="ButtonStyle.Primary" Click="@CreateGroup" />
+        </RadzenStack>
+    </RadzenColumn>
+</RadzenRow>
+
+<RadzenRow Gap="1rem">
+    @* Left Panel: Users List *@
+    <RadzenColumn Size="6">
+        <RadzenCard>
+            <RadzenText TextStyle="TextStyle.H5" class="rz-mb-3">Users</RadzenText>
+            <RadzenTextBox @bind-Value="@searchTerm" Placeholder="Search users..." Style="width: 100%; margin-bottom: 1rem;"
+                           @onkeyup="@OnSearchKeyUp" />
+            <RadzenDataGrid @ref="userGrid" Data="@users" TItem="UserDto" AllowSorting="true" AllowPaging="true" PageSize="10"
+                            ShowPagingSummary="true" SelectionMode="DataGridSelectionMode.Single" @bind-Value="@selectedUsers"
+                            RowSelect="@OnUserSelected">
+                <Columns>
+                    <RadzenDataGridColumn TItem="UserDto" Property="UserName" Title="Username" Sortable="true" Width="150px">
+                        <Template Context="user">
+                            <strong>@user.UserName</strong>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="UserDto" Title="Name" Sortable="false">
+                        <Template Context="user">
+                            @user.FirstName @user.LastName
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="UserDto" Property="Email" Title="Email" Sortable="true" />
+                </Columns>
+            </RadzenDataGrid>
+        </RadzenCard>
+    </RadzenColumn>
+
+    @* Right Panel: Group Assignments *@
+    <RadzenColumn Size="6">
+        <RadzenCard>
+            @if (selectedUser != null)
+            {
+                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" class="rz-mb-3">
+                    <RadzenText TextStyle="TextStyle.H5">
+                        Groups for <strong>@selectedUser.UserName</strong>
+                    </RadzenText>
+                    <RadzenButton Text="Save Changes" Icon="save" ButtonStyle="ButtonStyle.Primary"
+                                  Click="@SaveAssignments" Disabled="@isSaving" Busy="@isSaving" />
+                </RadzenStack>
+
+                @if (isLoadingGroups)
+                {
+                    <RadzenProgressBarCircular ProgressBarStyle="ProgressBarStyle.Primary" Value="100" ShowValue="false" Mode="ProgressBarMode.Indeterminate" />
+                }
+                else if (availableGroups != null && availableGroups.Count > 0)
+                {
+                    <RadzenStack Gap="0.75rem">
+                        @foreach (var group in availableGroups)
+                        {
+                            <RadzenCard Variant="Variant.Outlined" class="rz-p-3">
+                                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                                    <RadzenCheckBox @bind-Value="group.IsAssigned" />
+                                    <RadzenStack Gap="0">
+                                        <RadzenText TextStyle="TextStyle.Subtitle1"><strong>@group.GroupName</strong></RadzenText>
+                                    </RadzenStack>
+                                </RadzenStack>
+                            </RadzenCard>
+                        }
+                    </RadzenStack>
+                }
+                else
+                {
+                    <RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary">No groups available.</RadzenText>
+                }
+            }
+            else
+            {
+                <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="min-height: 300px;">
+                    <RadzenIcon Icon="people" Style="font-size: 48px; color: var(--rz-text-disabled-color);" />
+                    <RadzenText TextStyle="TextStyle.H6" class="rz-text-secondary">Select a user to manage group assignments</RadzenText>
+                </RadzenStack>
+            }
+        </RadzenCard>
+    </RadzenColumn>
+</RadzenRow>
+
+@code {
+    RadzenDataGrid<UserDto>? userGrid;
+    List<UserDto>? users;
+    IList<UserDto>? selectedUsers;
+    UserDto? selectedUser;
+
+    List<UserGroupAssignment>? availableGroups;
+    string? searchTerm;
+    bool isLoadingGroups;
+    bool isSaving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsers();
+    }
+
+    private async Task LoadUsers()
+    {
+        try
+        {
+            var result = await ApiService.GetAsync<UsersListResponse>("user/get?pageSize=100", AppConfig.AccessToken);
+            users = result?.Items;
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load users: {ex.Message}");
+        }
+    }
+
+    private async Task OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SearchUsers();
+        }
+    }
+
+    private async Task SearchUsers()
+    {
+        try
+        {
+            var endpoint = "user/get?pageSize=100";
+            if (!string.IsNullOrEmpty(searchTerm))
+            {
+                endpoint += $"&search={Uri.EscapeDataString(searchTerm)}";
+            }
+            var result = await ApiService.GetAsync<UsersListResponse>(endpoint, AppConfig.AccessToken);
+            users = result?.Items;
+            if (userGrid != null) await userGrid.Reload();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to search users: {ex.Message}");
+        }
+    }
+
+    private async Task OnUserSelected(UserDto user)
+    {
+        selectedUser = user;
+        await LoadGroupAssignments();
+    }
+
+    private async Task LoadGroupAssignments()
+    {
+        if (selectedUser == null) return;
+
+        isLoadingGroups = true;
+        StateHasChanged();
+
+        try
+        {
+            var assignments = await ApiService.GetAsync<List<UserGroupAssignment>>(
+                $"user/GetUserAssignments/{selectedUser.Id}", AppConfig.AccessToken);
+
+            if (assignments != null && assignments.Count > 0)
+            {
+                availableGroups = assignments;
+            }
+            else
+            {
+                // Fallback: load all groups and mark none as assigned
+                var groupsResult = await ApiService.GetAsync<GroupListResponse>("group/get?pageSize=100", AppConfig.AccessToken);
+                availableGroups = groupsResult?.Items?.Select(g => new UserGroupAssignment
+                {
+                    GroupId = g.Id,
+                    GroupName = g.DisplayName,
+                    IsAssigned = false
+                }).ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load group assignments: {ex.Message}");
+            availableGroups = new List<UserGroupAssignment>();
+        }
+        finally
+        {
+            isLoadingGroups = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveAssignments()
+    {
+        if (selectedUser == null || availableGroups == null) return;
+
+        isSaving = true;
+        StateHasChanged();
+
+        try
+        {
+            var selectedGroupIds = availableGroups.Where(g => g.IsAssigned).Select(g => g.GroupId).ToList();
+            await ApiService.PostAsync($"user/SyncUserGroups/{selectedUser.Id}",
+                new { groupIds = selectedGroupIds }, AppConfig.AccessToken);
+
+            NotificationService.Notify(NotificationSeverity.Success, "Saved",
+                $"Group assignments updated for {selectedUser.UserName}");
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to save assignments: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CreateGroup()
+    {
+        var result = await DialogService.OpenAsync<GroupForm>("Create Group",
+            new Dictionary<string, object?> { { "IsEdit", false } },
+            new DialogOptions { Width = "450px", Resizable = true, Draggable = true });
+
+        if (result == true)
+        {
+            // Refresh group assignments if a user is selected
+            if (selectedUser != null)
+            {
+                await LoadGroupAssignments();
+            }
+            NotificationService.Notify(NotificationSeverity.Success, "Created", "Group created successfully");
+        }
+    }
+
+    public class UsersListResponse
+    {
+        public List<UserDto> Items { get; set; } = new();
+        public int Total { get; set; }
+    }
+
+    public class GroupListResponse
+    {
+        public List<GroupDto> Items { get; set; } = new();
+        public int Total { get; set; }
+    }
+}

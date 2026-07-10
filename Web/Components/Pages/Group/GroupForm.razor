@@ -1,0 +1,59 @@
+@using ShellMgmt.Web.Models
+@inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject DialogService DialogService
+
+<RadzenTemplateForm Data="@model" TItem="GroupFormModel" Submit="@OnSubmit">
+    <RadzenStack Gap="1rem">
+        <RadzenFormField Text="Display Name">
+            <RadzenTextBox @bind-Value="model.DisplayName" Name="DisplayName" />
+            <RadzenRequiredValidator Component="DisplayName" Text="Display name is required" />
+        </RadzenFormField>
+
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem">
+            <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Light" Click="@(() => DialogService.Close(false))" />
+            <RadzenButton Text="Save" ButtonType="ButtonType.Submit" ButtonStyle="ButtonStyle.Primary" />
+        </RadzenStack>
+    </RadzenStack>
+</RadzenTemplateForm>
+
+@code {
+    [Parameter] public bool IsEdit { get; set; }
+    [Parameter] public string? GroupId { get; set; }
+    [Parameter] public string? ExistingName { get; set; }
+
+    private GroupFormModel model = new();
+    public GroupFormModel Model => model;
+
+    protected override Task OnInitializedAsync()
+    {
+        if (IsEdit && !string.IsNullOrEmpty(ExistingName))
+        {
+            model.DisplayName = ExistingName;
+        }
+        return Task.CompletedTask;
+    }
+
+    private async Task OnSubmit(GroupFormModel group)
+    {
+        try
+        {
+            if (IsEdit && !string.IsNullOrEmpty(GroupId))
+            {
+                await ApiService.PutAsync($"group/update/{GroupId}", new { displayName = group.DisplayName }, AppConfig.AccessToken);
+                NotificationService.Notify(NotificationSeverity.Success, "Updated", "Group updated successfully");
+            }
+            else
+            {
+                await ApiService.PostAsync("group/create", new { displayName = group.DisplayName }, AppConfig.AccessToken);
+                NotificationService.Notify(NotificationSeverity.Success, "Created", "Group created successfully");
+            }
+
+            DialogService.Close(true);
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", ex.Message);
+        }
+    }
+}

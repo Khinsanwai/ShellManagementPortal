@@ -1,0 +1,84 @@
+@inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject DialogService DialogService
+
+<RadzenTemplateForm Data="@model" TItem="MenuItemDto" Submit="@OnSubmit">
+    <RadzenStack Gap="1rem">
+        <RadzenFormField Text="Name">
+            <RadzenTextBox @bind-Value="model.Name" Name="Name" />
+            <RadzenRequiredValidator Component="Name" Text="Name is required" />
+        </RadzenFormField>
+        <RadzenFormField Text="URL">
+            <RadzenTextBox @bind-Value="model.Url" Name="Url" Placeholder="/page-route" />
+        </RadzenFormField>
+        <RadzenFormField Text="Parent Menu">
+            <RadzenDropDown @bind-Value="model.ParentId" Data="@parentMenus" TextProperty="Name" ValueProperty="Id"
+                            AllowClear="true" Placeholder="(Top-level menu)" Name="ParentId" />
+        </RadzenFormField>
+        <RadzenFormField Text="Menu Order">
+            <RadzenNumeric @bind-Value="model.MenuOrder" Name="MenuOrder" Min="0" />
+        </RadzenFormField>
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem">
+            <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Light" Click="@(() => DialogService.Close(false))" />
+            <RadzenButton Text="Save" ButtonType="ButtonType.Submit" ButtonStyle="ButtonStyle.Primary" />
+        </RadzenStack>
+    </RadzenStack>
+</RadzenTemplateForm>
+
+@code {
+    [Parameter] public Guid? MenuItemId { get; set; }
+
+    private MenuItemDto model = new();
+    private List<MenuItemDto>? parentMenus;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load all menu items for parent dropdown
+        var result = await ApiService.GetAsync<PagedList<MenuItemDto>>("menuitem/get?Take=100", AppConfig.AccessToken);
+        parentMenus = result?.Items?.ToList();
+
+        if (MenuItemId.HasValue)
+        {
+            var existing = parentMenus?.FirstOrDefault(m => m.Id == MenuItemId.Value);
+            if (existing != null)
+            {
+                model = existing;
+            }
+        }
+    }
+
+    private async Task OnSubmit(MenuItemDto item)
+    {
+        try
+        {
+            if (MenuItemId.HasValue)
+            {
+                await ApiService.PutAsync("menuitem/update", new
+                {
+                    Id = MenuItemId,
+                    item.Name,
+                    item.Url,
+                    item.ParentId,
+                    item.MenuOrder
+                }, AppConfig.AccessToken);
+                NotificationService.Notify(NotificationSeverity.Success, "Updated", "Menu item updated successfully");
+            }
+            else
+            {
+                await ApiService.PostAsync("menuitem/create", new
+                {
+                    item.Name,
+                    item.Url,
+                    item.ParentId,
+                    item.MenuOrder
+                }, AppConfig.AccessToken);
+                NotificationService.Notify(NotificationSeverity.Success, "Created", "Menu item created successfully");
+            }
+            DialogService.Close(true);
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", ex.Message);
+        }
+    }
+}
