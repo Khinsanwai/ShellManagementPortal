@@ -12,33 +12,6 @@
     <RadzenHeader>
         <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0">
             <RadzenSidebarToggle Click="@SidebarToggleClick" />
-            @if (menuItems != null)
-            {
-                @foreach (var menu in menuItems.Where(x => x.ParentId == null || x.ParentId == Guid.Empty).OrderBy(x => x.MenuOrder).ToList())
-                {
-                    var childItems = menuItems
-                        .Where(x => x.ParentId == menu.Id)
-                        .OrderBy(x => x.MenuOrder)
-                        .ToList();
-
-                    @if (childItems.Any())
-                    {
-                        <RadzenMenu>
-                            <RadzenMenuItem Text="@menu.Name" Icon="@GetMenuIcon(menu.Name)">
-                                @foreach (var item in childItems)
-                                {
-                                    <RadzenMenuItem Text="@item.Name" Click="@(() => OnMenuItemClick(item))" />
-                                }
-                            </RadzenMenuItem>
-                        </RadzenMenu>
-                    }
-                    else if (!string.IsNullOrEmpty(menu.Url))
-                    {
-                        <RadzenButton Text="@menu.Name" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small"
-                                      class="rz-mx-1" Click="@(() => OnMenuItemClick(menu))" />
-                    }
-                }
-            }
             <RadzenStack AlignItems="AlignItems.Center" Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" class="rz-ml-auto rz-mr-2">
                 <RadzenAppearanceToggle />
                 <RadzenProfileMenu Visible="@(Context.HttpContext?.User.Identity?.IsAuthenticated ?? false)" Click="@ProfileMenuClick">
@@ -57,9 +30,18 @@
         @Body
     </RadzenBody>
     <RadzenSidebar Expanded="@sidebarExpanded" style="z-index: 2">
-        @if (menuItems != null)
-        {
-            <MenuItemPanel MenuItems="menuItems" />
-        }
+        @* Debug Info *@
+        <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter" class="rz-m-2" AllowClose="false">
+            <small>
+                <strong>Debug:</strong><br/>
+                Name: @(Context.HttpContext?.User.Identity?.Name ?? "null")<br/>
+                Sub: @(Context.HttpContext?.User.FindFirst("sub")?.Value ?? "null")<br/>
+                AdminUser (config): @(Configuration["WSO2:AdminUser"] ?? "null")<br/>
+                IsAdmin: @(isUserAdmin ? "YES" : "NO")<br/>
+                Authenticated: @(Context.HttpContext?.User.Identity?.IsAuthenticated ?? false)<br/>
+                Menus: @(menuItems?.Count ?? 0)<br/>
+            </small>
+        </RadzenAlert>
+        <MenuItemPanel MenuItems="@(menuItems ?? new List<MenuItemDto>())" />
     </RadzenSidebar>
 </RadzenLayout>

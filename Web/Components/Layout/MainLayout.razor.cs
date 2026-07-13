@@ -26,6 +26,7 @@ public partial class MainLayout
     [Inject] protected ApiService ApiService { get; set; } = default!;
 
     private bool sidebarExpanded = true;
+    private bool isUserAdmin = false;
     private List<MenuItemDto>? menuItems;
 
     protected override async Task OnInitializedAsync()
@@ -37,64 +38,65 @@ public partial class MainLayout
             {
                 Logger.LogInformation("User is authenticated");
 
-                AppConfig.AccessToken = await Context.HttpContext.GetTokenAsync(OpenIdConnectParameterNames.AccessToken) ?? string.Empty;
-
-                if (IsTokenExpired(AppConfig.AccessToken))
-                {
-                    Logger.LogWarning("Access token expired, logging out.");
-                    await Logout();
-                    return;
-                }
-
-                AppConfig.TenantName = GetTenantName(AppConfig.AccessToken);
-
-                var tenant = await TenantService.GetTenantAsync(AppConfig.TenantName, AppConfig.AccessToken);
-                if (tenant != null)
-                {
-                    AppConfig.TenantId = tenant.Id?.ToString() ?? string.Empty;
-                }
-
-                var menuItemList = await MenuService.GetMenuItemsAsync(AppConfig.AccessToken);
-                var allMenus = menuItemList ?? [];
-
-                // Get user's assigned menus
+                // Get access token
                 try
                 {
-                    var userName = Context.HttpContext?.User.Identity?.Name ?? string.Empty;
-                    var userMenus = await GetUserAssignedMenuIds(userName);
-                    if (userMenus != null && userMenus.Count > 0)
-                    {
-                        // Filter: show assigned menus + their parent menus
-                        var assignedAndParents = new HashSet<Guid>(userMenus);
-                        foreach (var menuId in userMenus)
-                        {
-                            var menu = allMenus.FirstOrDefault(m => m.Id == menuId);
-                            if (menu?.ParentId != null && menu.ParentId != Guid.Empty)
-                                assignedAndParents.Add(menu.ParentId.Value);
-                        }
-                        menuItems = allMenus.Where(m => assignedAndParents.Contains(m.Id ?? Guid.Empty)).ToList();
-                    }
-                    else
-                    {
-                        // No assignments = show all menus (admin fallback)
-                        menuItems = allMenus;
-                    }
+                    AppConfig.AccessToken = await Context.HttpContext.GetTokenAsync(OpenIdConnectParameterNames.AccessToken) ?? string.Empty;
+                    Logger.LogInformation("Access token retrieved, length: {Length}", AppConfig.AccessToken.Length);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    menuItems = allMenus;
+                    Logger.LogWarning(ex, "Failed to get access token");
                 }
 
-                Logger.LogInformation("Menu Count: {Count}", menuItems.Count);
+                // Load tenant (non-critical)
+                try
+                {
+                    if (!string.IsNullOrEmpty(AppConfig.AccessToken) && !IsTokenExpired(AppConfig.AccessToken))
+                    {
+                        AppConfig.TenantName = GetTenantName(AppConfig.AccessToken);
+                        var tenant = await TenantService.GetTenantAsync(AppConfig.TenantName, AppConfig.AccessToken);
+                        if (tenant != null)
+                        {
+                            AppConfig.TenantId = tenant.Id?.ToString() ?? string.Empty;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Failed to load tenant, continuing...");
+                }
+
+                // Load menus from API
+                try
+                {
+                    Logger.LogInformation("Loading menus from API...");
+                    var menuItemList = await MenuService.GetMenuItemsAsync(AppConfig.AccessToken);
+                    var allMenus = menuItemList ?? new List<MenuItemDto>();
+                    Logger.LogInformation("Loaded {Count} menus", allMenus.Count);
+
+                    // Show all menus for everyone
+                    isUserAdmin = true;
+                    menuItems = allMenus;
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError(ex, "Failed to load menus");
+                    menuItems = new List<MenuItemDto>();
+                }
+
+                StateHasChanged();
             }
             else
             {
+                Logger.LogWarning("User is NOT authenticated, redirecting to login");
                 NavigationManager.NavigateTo("/Account/Login", true);
             }
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Main Layout Error");
+            menuItems = new List<MenuItemDto>();
         }
     }
 
@@ -172,7 +174,8 @@ public partial class MainLayout
             if (allMappings == null) return null;
 
             var userMappings = allMappings.Where(m =>
-                string.Equals(m.Wso2UserName, wso2UserName, StringComparison.OrdinalIgnoreCase)).ToList();
+                string.Equals(m.Wso2UserId, wso2UserName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(m.Wso2UserName, wso2UserName, StringComparison.OrdinalIgnoreCase)).ToList();
 
             return userMappings.Select(m => m.MenuItemId).ToList();
         }

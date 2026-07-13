@@ -1,4 +1,6 @@
 @using Microsoft.AspNetCore.Components
+@using Radzen
+@using Radzen.Blazor
 @using ShellMgmt.Domain.MenuItemModels
 @inject NavigationManager NavigationManager
 
@@ -6,52 +8,51 @@
     <RadzenImage Path="images/logo.png" style="width: 150px; height: 50px;" AlternateText="Application logo" />
 </RadzenStack>
 
-@if (MenuItems != null)
-{
-    <RadzenTabs Orientation="Orientation.Vertical" RenderMode="TabRenderMode.Client">
-        <Tabs>
-            @foreach (var menu in MenuItems.Where(x => x.ParentId == null || x.ParentId == Guid.Empty).OrderBy(x => x.MenuOrder).ToList())
-            {
-                var childItems = MenuItems
-                    .Where(x => x.ParentId == menu.Id)
-                    .OrderBy(x => x.MenuOrder)
-                    .ToList();
+@* Debug *@
+<RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" class="rz-m-2" AllowClose="false">
+    <small>MenuItemPanel received: @(MenuItems?.Count ?? 0) items</small>
+</RadzenAlert>
 
-                @if (childItems.Any())
-                {
-                    <RadzenTabsItem Text="@menu.Name" Icon="@GetMenuIcon(menu.Name)">
-                        <RadzenStack Gap="0.25rem">
-                            @foreach (var item in childItems)
-                            {
-                                <RadzenButton Text="@item.Name" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small"
-                                              class="rz-text-align-start rz-w-100" Click="@(() => OnMenuItemClick(item))" />
-                            }
-                        </RadzenStack>
-                    </RadzenTabsItem>
-                }
-                else if (!string.IsNullOrEmpty(menu.Url))
-                {
-                    <RadzenTabsItem Text="@menu.Name" Icon="@GetMenuIcon(menu.Name)">
-                        <RadzenButton Text="@($"Go to {menu.Name}")" ButtonStyle="ButtonStyle.Primary" Size="ButtonSize.Small"
-                                      Click="@(() => OnMenuItemClick(menu))" />
-                    </RadzenTabsItem>
-                }
+@* Dynamic Menu from Database *@
+@if (MenuItems != null && MenuItems.Any())
+{
+    <RadzenPanelMenu>
+        @foreach (var menu in MenuItems.Where(x => x.ParentId == null || x.ParentId == Guid.Empty).OrderBy(x => x.MenuOrder).ToList())
+        {
+            var childItems = MenuItems
+                .Where(x => x.ParentId == menu.Id)
+                .OrderBy(x => x.MenuOrder)
+                .ToList();
+
+            @if (childItems.Any())
+            {
+                @* Parent menu with children - expandable *@
+                <RadzenPanelMenuItem Text="@menu.Name" Icon="@GetMenuIcon(menu.Name)">
+                    @foreach (var item in childItems)
+                    {
+                        <RadzenPanelMenuItem Text="@item.Name" Icon="@GetMenuIcon(item.Name)" Path="@item.Url" />
+                    }
+                </RadzenPanelMenuItem>
             }
-        </Tabs>
-    </RadzenTabs>
+            else if (!string.IsNullOrEmpty(menu.Url))
+            {
+                @* Leaf menu item - clickable *@
+                <RadzenPanelMenuItem Text="@menu.Name" Icon="@GetMenuIcon(menu.Name)" Path="@menu.Url" />
+            }
+        }
+    </RadzenPanelMenu>
+}
+else
+{
+    <RadzenStack Orientation="Orientation.Vertical" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" class="rz-p-4">
+        <RadzenIcon Icon="menu" Style="font-size: 48px; color: var(--rz-text-disabled-color);" />
+        <RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary">No menus assigned</RadzenText>
+    </RadzenStack>
 }
 
 @code {
     [Parameter]
     public List<MenuItemDto> MenuItems { get; set; } = [];
-
-    private void OnMenuItemClick(MenuItemDto item)
-    {
-        if (!string.IsNullOrEmpty(item.Url))
-        {
-            NavigationManager.NavigateTo(item.Url);
-        }
-    }
 
     private static string GetMenuIcon(string? name)
     {
@@ -61,14 +62,17 @@
             "administration" => "admin_panel_settings",
             "settings" => "settings",
             "users" => "people",
+            "user list" => "person",
             "claims" => "security",
             "institutions" => "account_balance",
             "organization" => "corporate_fare",
             "apps" => "apps",
             "menu items" => "menu",
             "user groups" => "group_add",
+            "groups" => "group_add",
             "resources" => "key",
             "tenants" => "business",
+            "user menu assignment" => "assignment",
             _ => "folder"
         };
     }

@@ -1,5 +1,14 @@
 @page "/"
 @attribute [Authorize]
+@using Microsoft.AspNetCore.Authentication
+@using ShellMgmt.Domain.MenuItemModels
+@using ShellMgmt.Domain.UserModels
+@using ShellMgmt.Web.Services
+@inject IHttpContextAccessor Context
+@inject MenuService MenuService
+@inject ApiService ApiService
+@inject IConfiguration Configuration
+@inject ILogger<Home> Logger
 
 <PageTitle>Dashboard - Shell Management Portal</PageTitle>
 
@@ -10,101 +19,147 @@
     </RadzenColumn>
 </RadzenRow>
 
-<RadzenRow Gap="1rem" class="rz-p-4">
-    <RadzenColumn Size="3">
-        <RadzenCard>
-            <RadzenStack AlignItems="AlignItems.Center">
-                <RadzenIcon Icon="menu" Style="font-size: 48px; color: var(--rz-primary);" />
-                <RadzenText TextStyle="TextStyle.H6">Menu Items</RadzenText>
-                <RadzenLink Path="/menuitems" Text="Manage" />
-            </RadzenStack>
-        </RadzenCard>
-    </RadzenColumn>
-    <RadzenColumn Size="3">
-        <RadzenCard>
-            <RadzenStack AlignItems="AlignItems.Center">
-                <RadzenIcon Icon="security" Style="font-size: 48px; color: var(--rz-secondary);" />
-                <RadzenText TextStyle="TextStyle.H6">Claims</RadzenText>
-                <RadzenLink Path="/claims" Text="Manage" />
-            </RadzenStack>
-        </RadzenCard>
-    </RadzenColumn>
-    <RadzenColumn Size="3">
-        <RadzenCard>
-            <RadzenStack AlignItems="AlignItems.Center">
-                <RadzenIcon Icon="account_balance" Style="font-size: 48px; color: var(--rz-success);" />
-                <RadzenText TextStyle="TextStyle.H6">Institutions</RadzenText>
-                <RadzenLink Path="/institutions" Text="Manage" />
-            </RadzenStack>
-        </RadzenCard>
-    </RadzenColumn>
-    <RadzenColumn Size="3">
-        <RadzenCard>
-            <RadzenStack AlignItems="AlignItems.Center">
-                <RadzenIcon Icon="corporate_fare" Style="font-size: 48px; color: var(--rz-warning);" />
-                <RadzenText TextStyle="TextStyle.H6">Org Units</RadzenText>
-                <RadzenLink Path="/orgunits" Text="Manage" />
-            </RadzenStack>
-        </RadzenCard>
-    </RadzenColumn>
-</RadzenRow>
+@if (isLoading)
+{
+    <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="min-height: 200px;">
+        <RadzenProgressBarCircular ProgressBarStyle="ProgressBarStyle.Primary" Value="100" ShowValue="false" Mode="ProgressBarMode.Indeterminate" />
+    </RadzenStack>
+}
+else if (userMenuItems != null && userMenuItems.Any())
+{
+    <RadzenRow Gap="1rem" class="rz-p-4">
+        @foreach (var menu in userMenuItems.Where(x => !string.IsNullOrEmpty(x.Url)).OrderBy(x => x.MenuOrder))
+        {
+            <RadzenColumn Size="3">
+                <RadzenCard>
+                    <RadzenStack AlignItems="AlignItems.Center">
+                        <RadzenIcon Icon="@GetMenuIcon(menu.Name)" Style="font-size: 48px; color: var(--rz-primary);" />
+                        <RadzenText TextStyle="TextStyle.H6">@menu.Name</RadzenText>
+                        <RadzenLink Path="@menu.Url" Text="Manage" />
+                    </RadzenStack>
+                </RadzenCard>
+            </RadzenColumn>
+        }
+    </RadzenRow>
+}
+else
+{
+    <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="min-height: 200px;">
+        <RadzenIcon Icon="security" Style="font-size: 48px; color: var(--rz-text-disabled-color);" />
+        <RadzenText TextStyle="TextStyle.H6" class="rz-text-secondary">No menu items assigned</RadzenText>
+    </RadzenStack>
+}
 
-<RadzenRow Gap="1rem" class="rz-p-4">
-    <RadzenColumn Size="3">
-        <RadzenCard>
-            <RadzenStack AlignItems="AlignItems.Center">
-                <RadzenIcon Icon="apps" Style="font-size: 48px; color: var(--rz-info);" />
-                <RadzenText TextStyle="TextStyle.H6">Applications</RadzenText>
-                <RadzenLink Path="/apps" Text="Manage" />
-            </RadzenStack>
-        </RadzenCard>
-    </RadzenColumn>
-    <RadzenColumn Size="3">
-        <RadzenCard>
-            <RadzenStack AlignItems="AlignItems.Center">
-                <RadzenIcon Icon="key" Style="font-size: 48px; color: var(--rz-danger);" />
-                <RadzenText TextStyle="TextStyle.H6">Resources</RadzenText>
-                <RadzenLink Path="/resources" Text="Manage" />
-            </RadzenStack>
-        </RadzenCard>
-    </RadzenColumn>
-    <RadzenColumn Size="3">
-        <RadzenCard>
-            <RadzenStack AlignItems="AlignItems.Center">
-                <RadzenIcon Icon="business" Style="font-size: 48px; color: var(--rz-primary);" />
-                <RadzenText TextStyle="TextStyle.H6">Tenants</RadzenText>
-                <RadzenLink Path="/tenants" Text="Manage" />
-            </RadzenStack>
-        </RadzenCard>
-    </RadzenColumn>
-    <RadzenColumn Size="3">
-        <RadzenCard>
-            <RadzenStack AlignItems="AlignItems.Center">
-                <RadzenIcon Icon="people" Style="font-size: 48px; color: var(--rz-secondary);" />
-                <RadzenText TextStyle="TextStyle.H6">Users</RadzenText>
-                <RadzenLink Path="/users" Text="Manage" />
-            </RadzenStack>
-        </RadzenCard>
-    </RadzenColumn>
-</RadzenRow>
+@code {
+    private List<MenuItemDto>? userMenuItems;
+    private bool isLoading = true;
 
-<RadzenRow Gap="1rem" class="rz-p-4">
-    <RadzenColumn Size="3">
-        <RadzenCard>
-            <RadzenStack AlignItems="AlignItems.Center">
-                <RadzenIcon Icon="group_add" Style="font-size: 48px; color: var(--rz-primary);" />
-                <RadzenText TextStyle="TextStyle.H6">User Groups</RadzenText>
-                <RadzenLink Path="/user-groups" Text="Assign" />
-            </RadzenStack>
-        </RadzenCard>
-    </RadzenColumn>
-    <RadzenColumn Size="3">
-        <RadzenCard>
-            <RadzenStack AlignItems="AlignItems.Center">
-                <RadzenIcon Icon="security" Style="font-size: 48px; color: var(--rz-warning);" />
-                <RadzenText TextStyle="TextStyle.H6">Menu Access</RadzenText>
-                <RadzenLink Path="/user-menu-assign" Text="Assign" />
-            </RadzenStack>
-        </RadzenCard>
-    </RadzenColumn>
-</RadzenRow>
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var accessToken = await Context.HttpContext.GetTokenAsync("access_token");
+            if (!string.IsNullOrEmpty(accessToken))
+            {
+                var allMenus = await MenuService.GetMenuItemsAsync(accessToken) ?? new List<MenuItemDto>();
+
+                // Get current user info - use 'sub' claim since WSO2 doesn't send 'name'
+                var userName = Context.HttpContext?.User.FindFirst("sub")?.Value
+                    ?? Context.HttpContext?.User.Identity?.Name
+                    ?? string.Empty;
+                var adminUser = Configuration["WSO2:AdminUser"] ?? "admin";
+
+                // Admin user gets all menus
+                if (string.Equals(userName, adminUser, StringComparison.OrdinalIgnoreCase))
+                {
+                    userMenuItems = allMenus;
+                }
+                else
+                {
+                    var userMenuIds = await GetUserAssignedMenuIds(userName, accessToken);
+
+                    if (userMenuIds != null && userMenuIds.Count > 0)
+                    {
+                        // Filter: show assigned menus + their parent menus + their child menus
+                        var allowedIds = new HashSet<Guid>(userMenuIds);
+
+                        foreach (var menuId in userMenuIds)
+                        {
+                            var menu = allMenus.FirstOrDefault(m => m.Id == menuId);
+                            if (menu != null)
+                            {
+                                // Add parent menu
+                                if (menu.ParentId != null && menu.ParentId != Guid.Empty)
+                                    allowedIds.Add(menu.ParentId.Value);
+
+                                // Add child menus
+                                var children = allMenus.Where(m => m.ParentId == menu.Id).ToList();
+                                foreach (var child in children)
+                                {
+                                    allowedIds.Add(child.Id ?? Guid.Empty);
+                                }
+                            }
+                        }
+
+                        userMenuItems = allMenus.Where(m => allowedIds.Contains(m.Id ?? Guid.Empty)).ToList();
+                    }
+                    else
+                    {
+                        userMenuItems = new List<MenuItemDto>();
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading user menus for Home page");
+            userMenuItems = new List<MenuItemDto>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task<List<Guid>?> GetUserAssignedMenuIds(string wso2UserName, string accessToken)
+    {
+        try
+        {
+            var allMappings = await ApiService.GetAsync<List<UserMenuAssignmentDto>>("usermenu/GetAllMappings", accessToken);
+            if (allMappings == null) return null;
+
+            var userMappings = allMappings.Where(m =>
+                string.Equals(m.Wso2UserId, wso2UserName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(m.Wso2UserName, wso2UserName, StringComparison.OrdinalIgnoreCase)).ToList();
+
+            return userMappings.Select(m => m.MenuItemId).ToList();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string GetMenuIcon(string? name)
+    {
+        return name?.ToLower() switch
+        {
+            "dashboard" => "dashboard",
+            "administration" => "admin_panel_settings",
+            "settings" => "settings",
+            "users" => "people",
+            "user list" => "person",
+            "claims" => "security",
+            "institutions" => "account_balance",
+            "organization" => "corporate_fare",
+            "apps" => "apps",
+            "menu items" => "menu",
+            "user groups" => "group_add",
+            "groups" => "group_add",
+            "resources" => "key",
+            "tenants" => "business",
+            "user menu assignment" => "assignment",
+            _ => "folder"
+        };
+    }
+}
