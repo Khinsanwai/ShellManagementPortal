@@ -1,9 +1,11 @@
 @page "/"
+@page "/dashboard"
 @attribute [Authorize]
 @using Microsoft.AspNetCore.Authentication
 @using ShellMgmt.Domain.MenuItemModels
 @using ShellMgmt.Domain.UserModels
 @using ShellMgmt.Web.Services
+@using ShellMgmt.Web.Constants
 @inject IHttpContextAccessor Context
 @inject MenuService MenuService
 @inject ApiService ApiService
@@ -16,6 +18,61 @@
     <RadzenColumn Size="12">
         <RadzenText TextStyle="TextStyle.H4">Dashboard</RadzenText>
         <RadzenText TextStyle="TextStyle.Subtitle1">Welcome to the Shell Management Portal</RadzenText>
+    </RadzenColumn>
+</RadzenRow>
+
+@* Login Information Card *@
+<RadzenRow Gap="1rem" class="rz-p-4">
+    <RadzenColumn Size="12" SizeMD="6" SizeLG="4">
+        <RadzenCard class="rz-shadow-2">
+            <RadzenStack Gap="0.75rem">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                    <RadzenIcon Icon="account_circle" Style="font-size: 40px; color: var(--rz-primary);" />
+                    <RadzenText TextStyle="TextStyle.H5">Login Information</RadzenText>
+                </RadzenStack>
+                <RadzenDivider />
+                <RadzenStack Gap="0.5rem">
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                        <RadzenIcon Icon="person" Style="font-size: 20px; color: var(--rz-text-secondary);" />
+                        <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary">User Name:</RadzenText>
+                        <RadzenText TextStyle="TextStyle.Body1"><strong>@(userDisplayName ?? "N/A")</strong></RadzenText>
+                    </RadzenStack>
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                        <RadzenIcon Icon="fingerprint" Style="font-size: 20px; color: var(--rz-text-secondary);" />
+                        <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary">User ID:</RadzenText>
+                        <RadzenText TextStyle="TextStyle.Body1"><strong>@(userId ?? "N/A")</strong></RadzenText>
+                    </RadzenStack>
+                    @if (!string.IsNullOrEmpty(userEmail))
+                    {
+                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                            <RadzenIcon Icon="email" Style="font-size: 20px; color: var(--rz-text-secondary);" />
+                            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary">Email:</RadzenText>
+                            <RadzenText TextStyle="TextStyle.Body1"><strong>@userEmail</strong></RadzenText>
+                        </RadzenStack>
+                    }
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                        <RadzenIcon Icon="business" Style="font-size: 20px; color: var(--rz-text-secondary);" />
+                        <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary">Tenant:</RadzenText>
+                        <RadzenText TextStyle="TextStyle.Body1"><strong>@(AppConfig.TenantName ?? "N/A")</strong></RadzenText>
+                    </RadzenStack>
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                        <RadzenIcon Icon="verified_user" Style="font-size: 20px; color: var(--rz-text-secondary);" />
+                        <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary">Role:</RadzenText>
+                        <RadzenBadge Text="@(isAdmin ? "Admin" : "User")" BadgeStyle="@(isAdmin ? BadgeStyle.Success : BadgeStyle.Info)" />
+                    </RadzenStack>
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                        <RadzenIcon Icon="schedule" Style="font-size: 20px; color: var(--rz-text-secondary);" />
+                        <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary">Login Time:</RadzenText>
+                        <RadzenText TextStyle="TextStyle.Body1"><strong>@loginTime</strong></RadzenText>
+                    </RadzenStack>
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                        <RadzenIcon Icon="check_circle" Style="font-size: 20px; color: var(--rz-success);" />
+                        <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary">Status:</RadzenText>
+                        <RadzenBadge Text="Authenticated" BadgeStyle="BadgeStyle.Success" />
+                    </RadzenStack>
+                </RadzenStack>
+            </RadzenStack>
+        </RadzenCard>
     </RadzenColumn>
 </RadzenRow>
 
@@ -53,12 +110,63 @@ else
 @code {
     private List<MenuItemDto>? userMenuItems;
     private bool isLoading = true;
+    private string? userDisplayName;
+    private string? userId;
+    private string? userEmail;
+    private bool isAdmin;
+    private string loginTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            var accessToken = await Context.HttpContext.GetTokenAsync("access_token");
+            // Extract user ID from claims
+            userId = Context.HttpContext?.User.FindFirst("sub")?.Value;
+            var adminUser = Configuration["WSO2:AdminUser"] ?? "admin";
+            isAdmin = !string.IsNullOrEmpty(userId)
+                && !string.IsNullOrEmpty(adminUser)
+                && string.Equals(userId, adminUser, StringComparison.OrdinalIgnoreCase);
+
+            // Set initial display name from claims (instant)
+            userDisplayName = Context.HttpContext?.User.Identity?.Name
+                ?? Context.HttpContext?.User.FindFirst("name")?.Value
+                ?? Context.HttpContext?.User.FindFirst("preferred_username")?.Value
+                ?? Context.HttpContext?.User.FindFirst("given_name")?.Value
+                ?? Context.HttpContext?.User.FindFirst("email")?.Value
+                ?? userId;
+
+            var accessToken = Context.HttpContext != null
+                ? await Context.HttpContext.GetTokenAsync("access_token")
+                : null;
+
+            // Fetch user profile from API in background (non-blocking)
+            if (!string.IsNullOrEmpty(userId) && !string.IsNullOrEmpty(accessToken))
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var user = await ApiService.GetAsync<UserDto>($"user/Get/{userId}", accessToken);
+                        if (user != null)
+                        {
+                            var firstName = user.FirstName ?? string.Empty;
+                            var lastName = user.LastName ?? string.Empty;
+                            var name = $"{firstName} {lastName}".Trim();
+                            if (!string.IsNullOrEmpty(name))
+                                userDisplayName = name;
+                            else if (!string.IsNullOrEmpty(user.UserName))
+                                userDisplayName = user.UserName;
+                            userEmail = user.Email;
+                            await InvokeAsync(StateHasChanged);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogWarning(ex, "Failed to fetch user profile for userId: {UserId}", userId);
+                    }
+                });
+            }
+
             if (!string.IsNullOrEmpty(accessToken))
             {
                 var allMenus = await MenuService.GetMenuItemsAsync(accessToken) ?? new List<MenuItemDto>();
@@ -67,7 +175,6 @@ else
                 var userName = Context.HttpContext?.User.FindFirst("sub")?.Value
                     ?? Context.HttpContext?.User.Identity?.Name
                     ?? string.Empty;
-                var adminUser = Configuration["WSO2:AdminUser"] ?? "admin";
 
                 // Admin user gets all menus
                 if (string.Equals(userName, adminUser, StringComparison.OrdinalIgnoreCase))
@@ -76,7 +183,15 @@ else
                 }
                 else
                 {
+                    // Try matching by sub (UUID) first, then by SCIM username
                     var userMenuIds = await GetUserAssignedMenuIds(userName, accessToken);
+                    if ((userMenuIds == null || userMenuIds.Count == 0)
+                        && !string.IsNullOrEmpty(AppConfig.CurrentUserName)
+                        && !string.Equals(AppConfig.CurrentUserName, userName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Logger.LogInformation("No menus for sub={Sub}, trying SCIM username={Username}", userName, AppConfig.CurrentUserName);
+                        userMenuIds = await GetUserAssignedMenuIds(AppConfig.CurrentUserName, accessToken);
+                    }
 
                     if (userMenuIds != null && userMenuIds.Count > 0)
                     {

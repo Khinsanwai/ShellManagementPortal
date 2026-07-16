@@ -28,6 +28,7 @@ public partial class MainLayout
     private bool sidebarExpanded = true;
     private bool isUserAdmin = false;
     private List<MenuItemDto>? menuItems;
+    private string? userDisplayName;
 
     protected override async Task OnInitializedAsync()
     {
@@ -47,6 +48,42 @@ public partial class MainLayout
                 catch (Exception ex)
                 {
                     Logger.LogWarning(ex, "Failed to get access token");
+                }
+
+                // Resolve user display name from claims first (instant)
+                userDisplayName = Context.HttpContext?.User.Identity?.Name
+                    ?? Context.HttpContext?.User.FindFirst("name")?.Value
+                    ?? Context.HttpContext?.User.FindFirst("preferred_username")?.Value
+                    ?? Context.HttpContext?.User.FindFirst("given_name")?.Value
+                    ?? Context.HttpContext?.User.FindFirst("email")?.Value
+                    ?? "User";
+
+                // Fetch user profile from API to get real name and username
+                try
+                {
+                    var sub = Context.HttpContext?.User.FindFirst("sub")?.Value;
+                    if (!string.IsNullOrEmpty(sub) && !string.IsNullOrEmpty(AppConfig.AccessToken))
+                    {
+                        var user = await ApiService.GetAsync<UserDto>($"user/Get/{sub}", AppConfig.AccessToken);
+                        if (user != null)
+                        {
+                            var firstName = user.FirstName ?? string.Empty;
+                            var lastName = user.LastName ?? string.Empty;
+                            var name = $"{firstName} {lastName}".Trim();
+                            if (!string.IsNullOrEmpty(name))
+                                userDisplayName = name;
+                            else if (!string.IsNullOrEmpty(user.UserName))
+                                userDisplayName = user.UserName;
+
+                            // Store the SCIM username for menu assignment lookup
+                            AppConfig.CurrentUserName = user.UserName ?? string.Empty;
+                            Logger.LogInformation("User profile loaded: {Name}, UserName: {UserName}", userDisplayName, user.UserName);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Failed to fetch user profile for header");
                 }
 
                 // Load tenant (non-critical)
@@ -75,9 +112,65 @@ public partial class MainLayout
                     var allMenus = menuItemList ?? new List<MenuItemDto>();
                     Logger.LogInformation("Loaded {Count} menus", allMenus.Count);
 
-                    // Show all menus for everyone
-                    isUserAdmin = true;
-                    menuItems = allMenus;
+                    var sub = Context.HttpContext?.User.FindFirst("sub")?.Value ?? string.Empty;
+                    var adminUser = Configuration["WSO2:AdminUser"] ?? "admin";
+
+                    Logger.LogInformation("Menu filter: sub={Sub}, adminUser={AdminUser}, match={Match}",
+                        sub, adminUser, string.Equals(sub, adminUser, StringComparison.OrdinalIgnoreCase));
+
+                    if (string.Equals(sub, adminUser, StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Admin gets all menus
+                        isUserAdmin = true;
+                        menuItems = allMenus;
+                        Logger.LogInformation("Admin user - showing all {Count} menus", allMenus.Count);
+                    }
+                    else
+                    {
+                        // Non-admin: filter by UserMenuAssignment
+                        isUserAdmin = false;
+
+                        // Try matching by sub (UUID) first, then by SCIM username
+                        var userMenuIds = await GetUserAssignedMenuIds(sub);
+                        if ((userMenuIds == null || userMenuIds.Count == 0)
+                            && !string.IsNullOrEmpty(AppConfig.CurrentUserName)
+                            && !string.Equals(AppConfig.CurrentUserName, sub, StringComparison.OrdinalIgnoreCase))
+                        {
+                            Logger.LogInformation("No menus for sub={Sub}, trying SCIM username={Username}", sub, AppConfig.CurrentUserName);
+                            userMenuIds = await GetUserAssignedMenuIds(AppConfig.CurrentUserName);
+                        }
+
+                        if (userMenuIds != null && userMenuIds.Count > 0)
+                        {
+                            var allowedIds = new HashSet<Guid>(userMenuIds);
+
+                            foreach (var menuId in userMenuIds)
+                            {
+                                var menu = allMenus.FirstOrDefault(m => m.Id == menuId);
+                                if (menu != null)
+                                {
+                                    // Add parent menu
+                                    if (menu.ParentId != null && menu.ParentId != Guid.Empty)
+                                        allowedIds.Add(menu.ParentId.Value);
+
+                                    // Add child menus
+                                    var children = allMenus.Where(m => m.ParentId == menu.Id).ToList();
+                                    foreach (var child in children)
+                                    {
+                                        allowedIds.Add(child.Id ?? Guid.Empty);
+                                    }
+                                }
+                            }
+
+                            menuItems = allMenus.Where(m => allowedIds.Contains(m.Id ?? Guid.Empty)).ToList();
+                            Logger.LogInformation("Non-admin user - showing {Count} assigned menus", menuItems.Count);
+                        }
+                        else
+                        {
+                            menuItems = new List<MenuItemDto>();
+                            Logger.LogWarning("Non-admin user sub={Sub} - no menus assigned in UserMenuAssignment", sub);
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {

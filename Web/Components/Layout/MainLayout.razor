@@ -20,7 +20,7 @@
                         <RadzenProfileMenuItem Text="Logout" Value="Logout" Icon="power_settings_new" />
                     </ChildContent>
                     <Template>
-                        @Context.HttpContext?.User.Identity?.Name
+                        @(userDisplayName ?? Context.HttpContext?.User.Identity?.Name ?? "User")
                     </Template>
                 </RadzenProfileMenu>
             </RadzenStack>
@@ -34,7 +34,7 @@
         <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter" class="rz-m-2" AllowClose="false">
             <small>
                 <strong>Debug:</strong><br/>
-                Name: @(Context.HttpContext?.User.Identity?.Name ?? "null")<br/>
+                Name: @(userDisplayName ?? Context.HttpContext?.User.Identity?.Name ?? "null")<br/>
                 Sub: @(Context.HttpContext?.User.FindFirst("sub")?.Value ?? "null")<br/>
                 AdminUser (config): @(Configuration["WSO2:AdminUser"] ?? "null")<br/>
                 IsAdmin: @(isUserAdmin ? "YES" : "NO")<br/>

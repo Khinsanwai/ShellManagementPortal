@@ -10,4 +10,5 @@ public static class AppConfig
     public static string AccessToken { get; set; } = string.Empty;
     public static string TenantId { get; set; } = string.Empty;
     public static string TenantName { get; set; } = string.Empty;
+    public static string CurrentUserName { get; set; } = string.Empty;
 }
