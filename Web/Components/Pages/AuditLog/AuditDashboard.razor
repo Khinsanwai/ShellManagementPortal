@@ -1,0 +1,214 @@
+@page "/audit-dashboard"
+@attribute [Authorize]
+@inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Audit Dashboard - Shell Management Portal</PageTitle>
+
+@* Header *@
+<RadzenRow class="rz-p-4">
+    <RadzenColumn Size="12">
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                <RadzenButton Icon="arrow_back" ButtonStyle="ButtonStyle.Light" Click="@(() => NavigationManager.NavigateTo("/"))" Tooltip="Return to Dashboard" />
+                <RadzenText TextStyle="TextStyle.H4">Audit Dashboard</RadzenText>
+            </RadzenStack>
+            <RadzenButton Text="Refresh" Icon="refresh" ButtonStyle="ButtonStyle.Primary" Click="@LoadData" Disabled="@isLoading" />
+        </RadzenStack>
+    </RadzenColumn>
+</RadzenRow>
+
+@if (isLoading)
+{
+    <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="min-height: 300px;">
+        <RadzenProgressBarCircular ProgressBarStyle="ProgressBarStyle.Primary" Value="100" ShowValue="false" Mode="ProgressBarMode.Indeterminate" />
+        <RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary">Loading audit statistics...</RadzenText>
+    </RadzenStack>
+}
+else if (dashboard != null)
+{
+    @* Stat Cards *@
+    <RadzenRow Gap="1rem" class="rz-p-4">
+        @* Total Logins *@
+        <RadzenColumn Size="12" SizeMD="6" SizeLG="4">
+            <RadzenCard class="rz-shadow-2">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                    <RadzenIcon Icon="login" Style="font-size: 48px; color: var(--rz-success);" />
+                    <RadzenStack Gap="0">
+                        <RadzenText TextStyle="TextStyle.H4"><strong>@dashboard.TotalLogins</strong></RadzenText>
+                        <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary">Total Logins</RadzenText>
+                    </RadzenStack>
+                </RadzenStack>
+            </RadzenCard>
+        </RadzenColumn>
+
+        @* Failed Logins *@
+        <RadzenColumn Size="12" SizeMD="6" SizeLG="4">
+            <RadzenCard class="rz-shadow-2">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                    <RadzenIcon Icon="error_outline" Style="font-size: 48px; color: var(--rz-danger);" />
+                    <RadzenStack Gap="0">
+                        <RadzenText TextStyle="TextStyle.H4"><strong>@dashboard.FailedLogins</strong></RadzenText>
+                        <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary">Failed Logins</RadzenText>
+                    </RadzenStack>
+                </RadzenStack>
+            </RadzenCard>
+        </RadzenColumn>
+
+        @* Online Users *@
+        <RadzenColumn Size="12" SizeMD="6" SizeLG="4">
+            <RadzenCard class="rz-shadow-2">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                    <RadzenIcon Icon="people" Style="font-size: 48px; color: var(--rz-info);" />
+                    <RadzenStack Gap="0">
+                        <RadzenText TextStyle="TextStyle.H4"><strong>@dashboard.OnlineUsers</strong></RadzenText>
+                        <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary">Online Users (30 min)</RadzenText>
+                    </RadzenStack>
+                </RadzenStack>
+            </RadzenCard>
+        </RadzenColumn>
+
+        @* Admin Activities Today *@
+        <RadzenColumn Size="12" SizeMD="6" SizeLG="4">
+            <RadzenCard class="rz-shadow-2">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                    <RadzenIcon Icon="admin_panel_settings" Style="font-size: 48px; color: var(--rz-warning);" />
+                    <RadzenStack Gap="0">
+                        <RadzenText TextStyle="TextStyle.H4"><strong>@dashboard.AdminActivitiesToday</strong></RadzenText>
+                        <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary">Activities Today</RadzenText>
+                    </RadzenStack>
+                </RadzenStack>
+            </RadzenCard>
+        </RadzenColumn>
+
+        @* Tokens Issued *@
+        <RadzenColumn Size="12" SizeMD="6" SizeLG="4">
+            <RadzenCard class="rz-shadow-2">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                    <RadzenIcon Icon="vpn_key" Style="font-size: 48px; color: #7c3aed;" />
+                    <RadzenStack Gap="0">
+                        <RadzenText TextStyle="TextStyle.H4"><strong>@dashboard.TokensIssued</strong></RadzenText>
+                        <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary">Tokens Issued</RadzenText>
+                    </RadzenStack>
+                </RadzenStack>
+            </RadzenCard>
+        </RadzenColumn>
+    </RadzenRow>
+
+    @* Recent Activities *@
+    <RadzenRow class="rz-p-4">
+        <RadzenColumn Size="12">
+            <RadzenCard class="rz-shadow-2">
+                <RadzenStack Gap="1rem">
+                    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                            <RadzenIcon Icon="history" Style="font-size: 28px; color: var(--rz-primary);" />
+                            <RadzenText TextStyle="TextStyle.H5">Recent Activities</RadzenText>
+                        </RadzenStack>
+                        <RadzenButton Text="View All" Icon="list" ButtonStyle="ButtonStyle.Light" Click="@(() => NavigationManager.NavigateTo("/audit-logs"))" />
+                    </RadzenStack>
+
+                    <RadzenDataGrid Data="@dashboard.RecentActivities" TItem="UserlogDto" AllowSorting="false" AllowPaging="false"
+                                    AllowColumnResize="true" EmptyText="No recent activities found.">
+                        <Columns>
+                            <RadzenDataGridColumn TItem="UserlogDto" Property="CreatedDate" Title="Time" Width="160px">
+                                <Template Context="l">
+                                    @l.CreatedDate.ToString("yyyy-MM-dd HH:mm:ss")
+                                </Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="UserlogDto" Property="Username" Title="Username" Width="140px">
+                                <Template Context="l">
+                                    <strong>@(l.Username ?? "—")</strong>
+                                </Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="UserlogDto" Property="Category" Title="Category" Width="120px">
+                                <Template Context="l">
+                                    <RadzenBadge Text="@GetCategoryText(l.Category)" BadgeStyle="@GetCategoryStyle(l.Category)" />
+                                </Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="UserlogDto" Property="Action" Title="Action" Width="140px" />
+                            <RadzenDataGridColumn TItem="UserlogDto" Property="Module" Title="Module" Width="130px">
+                                <Template Context="l">
+                                    @(l.Module ?? "—")
+                                </Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="UserlogDto" Property="Result" Title="Result" Width="100px">
+                                <Template Context="l">
+                                    @if (l.Result == "Success")
+                                    {
+                                        <RadzenBadge Text="Success" BadgeStyle="BadgeStyle.Success" />
+                                    }
+                                    else
+                                    {
+                                        <RadzenBadge Text="@l.Result" BadgeStyle="BadgeStyle.Danger" />
+                                    }
+                                </Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="UserlogDto" Property="Description" Title="Description" MinWidth="200px">
+                                <Template Context="l">
+                                    @if (!string.IsNullOrEmpty(l.Description) && l.Description.Length > 80)
+                                    {
+                                        <span title="@l.Description">@l.Description.Substring(0, 80)...</span>
+                                    }
+                                    else
+                                    {
+                                        @(l.Description ?? "—")
+                                    }
+                                </Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="UserlogDto" Property="IPAddress" Title="IP Address" Width="130px" />
+                        </Columns>
+                    </RadzenDataGrid>
+                </RadzenStack>
+            </RadzenCard>
+        </RadzenColumn>
+    </RadzenRow>
+}
+
+@code {
+    private AuditDashboardDto? dashboard;
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try
+        {
+            dashboard = await ApiService.GetAsync<AuditDashboardDto>("userlog/dashboard", AppConfig.AccessToken);
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load audit dashboard: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private static string GetCategoryText(string? category) => category switch
+    {
+        "Login" => "Login",
+        "Logout" => "Logout",
+        "FailedLogin" => "Failed Login",
+        "TokenIssued" => "Token",
+        "Action" => "Action",
+        _ => category ?? "Unknown"
+    };
+
+    private static BadgeStyle GetCategoryStyle(string? category) => category switch
+    {
+        "Login" => BadgeStyle.Success,
+        "Logout" => BadgeStyle.Info,
+        "FailedLogin" => BadgeStyle.Danger,
+        "TokenIssued" => BadgeStyle.Warning,
+        "Action" => BadgeStyle.Warning,
+        _ => BadgeStyle.Light
+    };
+}

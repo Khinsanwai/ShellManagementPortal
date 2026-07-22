@@ -20,6 +20,14 @@ public sealed class UserlogController(IMediator mediator, ILogger<UserlogControl
         return Ok(result);
     }
 
+    [HttpGet("Dashboard")]
+    [Authorize]
+    public async Task<IActionResult> GetDashboard(CancellationToken cancellationToken)
+    {
+        var result = await mediator.Send(new GetAuditDashboardQuery(), cancellationToken);
+        return Ok(result);
+    }
+
     [HttpPost("Create")]
     [AllowAnonymous]
     public async Task<IActionResult> Create([FromBody] CreateUserlogCommand command, CancellationToken cancellationToken)

@@ -24,7 +24,16 @@
     <Columns>
         <RadzenDataGridColumn TItem="AppDto" Property="Name" Title="Name" Sortable="true" Width="200px">
             <Template Context="a">
-                <strong>@a.Name</strong>
+                @if (!string.IsNullOrEmpty(a.URL))
+                {
+                    <a href="@a.URL" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: var(--rz-primary); font-weight: bold;" title="Open @a.Name">
+                        @a.Name <RadzenIcon Icon="open_in_new" Style="font-size: 16px; vertical-align: middle;" />
+                    </a>
+                }
+                else
+                {
+                    <strong>@a.Name</strong>
+                }
             </Template>
         </RadzenDataGridColumn>
         <RadzenDataGridColumn TItem="AppDto" Property="Code" Title="Code" Sortable="true" Width="120px">
@@ -32,7 +41,20 @@
                 <RadzenBadge Text="@a.Code" BadgeStyle="BadgeStyle.Info" />
             </Template>
         </RadzenDataGridColumn>
-        <RadzenDataGridColumn TItem="AppDto" Property="URL" Title="URL" Sortable="false" />
+        <RadzenDataGridColumn TItem="AppDto" Property="URL" Title="URL" Sortable="false">
+            <Template Context="a">
+                @if (!string.IsNullOrEmpty(a.URL))
+                {
+                    <a href="@a.URL" target="_blank" rel="noopener noreferrer" style="color: var(--rz-primary);" title="@a.URL">
+                        @(a.URL.Length > 50 ? a.URL.Substring(0, 50) + "..." : a.URL)
+                    </a>
+                }
+                else
+                {
+                    <span style="color: var(--rz-text-secondary);">—</span>
+                }
+            </Template>
+        </RadzenDataGridColumn>
         <RadzenDataGridColumn TItem="AppDto" Property="Version" Title="Version" Sortable="true" Width="100px" />
         <RadzenDataGridColumn TItem="AppDto" Property="Status" Title="Status" Sortable="true" Width="100px">
             <Template Context="a">

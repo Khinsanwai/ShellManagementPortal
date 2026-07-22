@@ -5,13 +5,8 @@
 @inject NavigationManager NavigationManager
 
 <RadzenStack AlignItems="Radzen.AlignItems.Center" JustifyContent="Radzen.JustifyContent.Start" class="rz-py-4 rz-py-lg-6" Style="padding: 5px;">
-    <RadzenImage Path="images/logo.png" style="width: 150px; height: 50px;" AlternateText="Application logo" />
+    <RadzenImage Path="images/mini-side-bar-logo.png" style="width: 100px; height: 90px;" AlternateText="Application logo" />
 </RadzenStack>
-
-@* Debug *@
-<RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" class="rz-m-2" AllowClose="false">
-    <small>MenuItemPanel received: @(MenuItems?.Count ?? 0) items</small>
-</RadzenAlert>
 
 @* Dynamic Menu from Database *@
 @if (MenuItems != null && MenuItems.Any())
@@ -79,6 +74,7 @@ else
             "resources" => "key",
             "tenants" => "business",
             "audit logs" => "history",
+            "audit dashboard" => "dashboard",
             "user menu assignment" => "assignment",
             _ => "folder"
         };
