@@ -346,6 +346,203 @@ public class ScimService
         }
     }
 
+    // ========== Role Management (WSO2 SCIM2 Roles) ==========
+
+    public async Task<List<RoleDto>> GetRolesAsync(int startIndex = 1, int count = 100)
+    {
+        var url = $"{_baseUrl}/Roles?startIndex={startIndex}&count={count}";
+        var response = await _httpClient.GetAsync(url);
+        response.EnsureSuccessStatusCode();
+        var content = await response.Content.ReadAsStringAsync();
+        var scimResponse = JsonSerializer.Deserialize<ScimRoleListResponse>(content, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        return scimResponse?.Resources.Select(MapToRoleDto).ToList() ?? new();
+    }
+
+    public async Task<RoleDto?> GetRoleAsync(string roleId)
+    {
+        var url = $"{_baseUrl}/Roles/{roleId}";
+        var response = await _httpClient.GetAsync(url);
+        if (!response.IsSuccessStatusCode) return null;
+        var content = await response.Content.ReadAsStringAsync();
+        var scimRole = JsonSerializer.Deserialize<ScimRoleResource>(content, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        return scimRole != null ? MapToRoleDto(scimRole) : null;
+    }
+
+    public async Task<RoleDto> CreateRoleAsync(string displayName)
+    {
+        var body = new
+        {
+            schemas = new[] { "urn:ietf:params:scim:schemas:core:2.0:Role" },
+            displayName
+        };
+        var json = JsonSerializer.Serialize(body);
+        var content = new StringContent(json, Encoding.UTF8, "application/scim+json");
+        var response = await _httpClient.PostAsync($"{_baseUrl}/Roles", content);
+        var responseBody = await response.Content.ReadAsStringAsync();
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = JsonSerializer.Deserialize<ScimError>(responseBody);
+            throw new Exception($"SCIM create role failed: {error?.Detail ?? responseBody}");
+        }
+        var created = JsonSerializer.Deserialize<ScimRoleResource>(responseBody, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        return MapToRoleDto(created ?? throw new Exception("Failed to parse SCIM role response"));
+    }
+
+    public async Task<RoleDto> UpdateRoleAsync(string roleId, string displayName)
+    {
+        var patchBody = new
+        {
+            schemas = new[] { "urn:ietf:params:scim:api:messages:2.0:PatchOp" },
+            Operations = new[]
+            {
+                new
+                {
+                    op = "replace",
+                    value = new { displayName }
+                }
+            }
+        };
+        var json = JsonSerializer.Serialize(patchBody);
+        var content = new StringContent(json, Encoding.UTF8, "application/scim+json");
+        var request = new HttpRequestMessage(HttpMethod.Patch, $"{_baseUrl}/Roles/{roleId}") { Content = content };
+        var response = await _httpClient.SendAsync(request);
+        var responseBody = await response.Content.ReadAsStringAsync();
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = JsonSerializer.Deserialize<ScimError>(responseBody);
+            throw new Exception($"SCIM update role failed: {error?.Detail ?? responseBody}");
+        }
+        var updated = JsonSerializer.Deserialize<ScimRoleResource>(responseBody, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        return MapToRoleDto(updated ?? throw new Exception("Failed to parse SCIM role response"));
+    }
+
+    public async Task<bool> DeleteRoleAsync(string roleId)
+    {
+        var response = await _httpClient.DeleteAsync($"{_baseUrl}/Roles/{roleId}");
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task AssignGroupToRoleAsync(string roleId, string groupId, string groupName)
+    {
+        // WSO2: Roles accept groups as members via PATCH
+        var patchBody = new ScimPatchRequest
+        {
+            Operations = new List<ScimPatchOperation>
+            {
+                new()
+                {
+                    Op = "add",
+                    Value = new Dictionary<string, object>
+                    {
+                        ["members"] = new List<ScimPatchMember>
+                        {
+                            new()
+                            {
+                                Value = groupId,
+                                Display = groupName,
+                                Ref = $"{_baseUrl}/Groups/{groupId}"
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        var json = JsonSerializer.Serialize(patchBody);
+        _logger.LogInformation("AssignGroupToRole PATCH: {Body}", json);
+        var content = new StringContent(json, Encoding.UTF8, "application/scim+json");
+        var request = new HttpRequestMessage(HttpMethod.Patch, $"{_baseUrl}/Roles/{roleId}") { Content = content };
+        var response = await _httpClient.SendAsync(request);
+        var responseBody = await response.Content.ReadAsStringAsync();
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogError("AssignGroupToRole failed. Status: {Status}, Body: {Body}", response.StatusCode, responseBody);
+            var error = JsonSerializer.Deserialize<ScimError>(responseBody);
+            throw new Exception($"SCIM assign group to role failed: {error?.Detail ?? responseBody}");
+        }
+    }
+
+    public async Task RemoveGroupFromRoleAsync(string roleId, string groupId)
+    {
+        var patchBody = new ScimPatchRequest
+        {
+            Operations = new List<ScimPatchOperation>
+            {
+                new()
+                {
+                    Op = "remove",
+                    Path = $"members[value eq \"{groupId}\"]"
+                }
+            }
+        };
+
+        var json = JsonSerializer.Serialize(patchBody);
+        _logger.LogInformation("RemoveGroupFromRole PATCH: {Body}", json);
+        var content = new StringContent(json, Encoding.UTF8, "application/scim+json");
+        var request = new HttpRequestMessage(HttpMethod.Patch, $"{_baseUrl}/Roles/{roleId}") { Content = content };
+        var response = await _httpClient.SendAsync(request);
+        var responseBody = await response.Content.ReadAsStringAsync();
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogError("RemoveGroupFromRole failed. Status: {Status}, Body: {Body}", response.StatusCode, responseBody);
+            var error = JsonSerializer.Deserialize<ScimError>(responseBody);
+            throw new Exception($"SCIM remove group from role failed: {error?.Detail ?? responseBody}");
+        }
+    }
+
+    public async Task SyncRoleGroupsAsync(string roleId, List<string> targetGroupIds)
+    {
+        var role = await GetRoleAsync(roleId)
+            ?? throw new Exception($"Role {roleId} not found");
+
+        var currentMemberIds = role.MemberIds;
+        var groups = await GetGroupsAsync();
+
+        // Add new groups
+        foreach (var groupId in targetGroupIds)
+        {
+            if (!currentMemberIds.Contains(groupId))
+            {
+                var group = groups.FirstOrDefault(g => g.Id == groupId);
+                var groupName = group?.DisplayName ?? groupId;
+                await AssignGroupToRoleAsync(roleId, groupId, groupName);
+                _logger.LogInformation("Assigned group {GroupId} to role {RoleId}", groupId, roleId);
+            }
+        }
+
+        // Remove groups no longer assigned
+        foreach (var memberId in currentMemberIds)
+        {
+            if (!targetGroupIds.Contains(memberId))
+            {
+                await RemoveGroupFromRoleAsync(roleId, memberId);
+                _logger.LogInformation("Removed group {GroupId} from role {RoleId}", memberId, roleId);
+            }
+        }
+    }
+
+    public async Task SyncUserRoleAssignmentsAsync(string userId, string userName, List<string> targetRoleIds)
+    {
+        // WSO2 architecture: User → Group → Role
+        // User-role assignment is done indirectly via group assignment
+        // This method is kept for API compatibility but delegates to group-based flow
+        _logger.LogInformation("SyncUserRoleAssignments called for user {UserId} — WSO2 uses group-based role assignment", userId);
+        await Task.CompletedTask;
+    }
+
+    private static RoleDto MapToRoleDto(ScimRoleResource role)
+    {
+        return new RoleDto
+        {
+            Id = role.Id,
+            DisplayName = role.DisplayName,
+            MemberIds = role.Members?.Select(m => m.Value).ToList() ?? new(),
+            MemberDisplayNames = role.Members?.Select(m => m.Display).ToList() ?? new(),
+            CreatedDate = role.Meta?.Created ?? DateTime.MinValue,
+            LastModifiedDate = role.Meta?.LastModified ?? DateTime.MinValue
+        };
+    }
+
     public async Task ResetPasswordAsync(string userId, string newPassword)
     {
         var patchBody = new

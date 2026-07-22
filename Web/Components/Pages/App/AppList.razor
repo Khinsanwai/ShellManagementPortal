@@ -1,33 +1,136 @@
 @page "/apps"
 @attribute [Authorize]
 @inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject DialogService DialogService
 @inject NavigationManager NavigationManager
 
 <PageTitle>Applications - Shell Management Portal</PageTitle>
 
 <RadzenRow class="rz-p-4">
     <RadzenColumn Size="12">
-        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
-            <RadzenButton Icon="arrow_back" ButtonStyle="ButtonStyle.Light" Click="@(() => NavigationManager.NavigateTo("/"))" Tooltip="Return to Dashboard" />
-            <RadzenText TextStyle="TextStyle.H4">Applications</RadzenText>
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                <RadzenButton Icon="arrow_back" ButtonStyle="ButtonStyle.Light" Click="@(() => NavigationManager.NavigateTo("/"))" Tooltip="Return to Dashboard" />
+                <RadzenText TextStyle="TextStyle.H4">Applications</RadzenText>
+            </RadzenStack>
+            <RadzenButton Text="Add Application" Icon="add" Click="@CreateApp" />
         </RadzenStack>
     </RadzenColumn>
 </RadzenRow>
 
-<RadzenDataGrid @ref="grid" Data="@items" TItem="AppDto" AllowSorting="true" AllowPaging="true" PageSize="10">
+<RadzenDataGrid @ref="grid" Data="@items" TItem="AppDto" AllowSorting="true" AllowPaging="true" PageSize="10"
+                ShowPagingSummary="true">
     <Columns>
-        <RadzenDataGridColumn TItem="AppDto" Property="Name" Title="Name" />
-        <RadzenDataGridColumn TItem="AppDto" Property="Description" Title="Description" />
+        <RadzenDataGridColumn TItem="AppDto" Property="Name" Title="Name" Sortable="true" Width="200px">
+            <Template Context="a">
+                <strong>@a.Name</strong>
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="AppDto" Property="Code" Title="Code" Sortable="true" Width="120px">
+            <Template Context="a">
+                <RadzenBadge Text="@a.Code" BadgeStyle="BadgeStyle.Info" />
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="AppDto" Property="URL" Title="URL" Sortable="false" />
+        <RadzenDataGridColumn TItem="AppDto" Property="Version" Title="Version" Sortable="true" Width="100px" />
+        <RadzenDataGridColumn TItem="AppDto" Property="Status" Title="Status" Sortable="true" Width="100px">
+            <Template Context="a">
+                @if (a.Status)
+                {
+                    <RadzenBadge Text="Active" BadgeStyle="BadgeStyle.Success" />
+                }
+                else
+                {
+                    <RadzenBadge Text="Inactive" BadgeStyle="BadgeStyle.Danger" />
+                }
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="AppDto" Property="CreatedDate" Title="Created" Sortable="true">
+            <Template Context="a">
+                @a.CreatedDate.ToString("yyyy-MM-dd HH:mm")
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="AppDto" Title="Actions" Width="150px">
+            <Template Context="a">
+                <RadzenButton Icon="edit" Size="ButtonSize.Small" Tooltip="Edit" Click="@(() => EditApp(a))" />
+                <RadzenButton Icon="delete" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Danger" Tooltip="Delete"
+                              Click="@(() => DeleteApp(a))" />
+            </Template>
+        </RadzenDataGridColumn>
     </Columns>
 </RadzenDataGrid>
 
 @code {
     RadzenDataGrid<AppDto>? grid;
-    IEnumerable<AppDto>? items;
+    List<AppDto>? items;
 
     protected override async Task OnInitializedAsync()
     {
-        var result = await ApiService.GetAsync<PagedList<AppDto>>("app/get", AppConfig.AccessToken);
-        items = result?.Items;
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            var result = await ApiService.GetAsync<AppListResponse>("app/get", AppConfig.AccessToken);
+            items = result?.Items;
+            if (grid != null) await grid.Reload();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load applications: {ex.Message}");
+        }
+    }
+
+    private async Task CreateApp()
+    {
+        var result = await DialogService.OpenAsync<AppForm>("Add Application",
+            new Dictionary<string, object?> { { "IsEdit", false } },
+            new DialogOptions { Width = "600px", Resizable = true, Draggable = true });
+        if (result == true) await ReloadData();
+    }
+
+    private async Task EditApp(AppDto app)
+    {
+        var result = await DialogService.OpenAsync<AppForm>("Edit Application",
+            new Dictionary<string, object?> { { "IsEdit", true }, { "AppId", app.Id } },
+            new DialogOptions { Width = "600px", Resizable = true, Draggable = true });
+        if (result == true) await ReloadData();
+    }
+
+    private async Task DeleteApp(AppDto app)
+    {
+        var confirmed = await DialogService.Confirm(
+            $"Are you sure you want to delete application '{app.Name}'?\n\nThis action cannot be undone.",
+            "Delete Application",
+            new ConfirmOptions { OkButtonText = "Delete", CancelButtonText = "Cancel" });
+
+        if (confirmed == true)
+        {
+            try
+            {
+                await ApiService.DeleteAsync($"app/delete/{app.Id}", AppConfig.AccessToken);
+                NotificationService.Notify(NotificationSeverity.Success, "Deleted", $"Application '{app.Name}' deleted successfully");
+                await ReloadData();
+            }
+            catch (Exception ex)
+            {
+                NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to delete application: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task ReloadData()
+    {
+        if (grid != null) await grid.Reload();
+        else await LoadData();
+    }
+
+    public class AppListResponse
+    {
+        public List<AppDto> Items { get; set; } = new();
+        public int Total { get; set; }
     }
 }

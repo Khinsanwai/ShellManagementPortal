@@ -32,6 +32,7 @@ builder.Services.AddScoped<MenuService>();
 builder.Services.AddScoped<TenantService>();
 builder.Services.AddScoped<ResourceService>();
 builder.Services.AddScoped<ApiService>();
+builder.Services.AddSingleton<AuditLogService>();
 builder.Services.AddCascadingAuthenticationState();
 
 // WSO2 OIDC Authentication
@@ -115,6 +116,33 @@ builder.Services.AddAuthentication(options =>
         {
             context.ProtocolMessage.RedirectUri = wso2Settings["RedirectUri"];
             return Task.CompletedTask;
+        },
+        OnTokenValidated = async context =>
+        {
+            var auditLog = context.HttpContext.RequestServices.GetRequiredService<AuditLogService>();
+            var userId = context.Principal?.FindFirst("sub")?.Value;
+            var username = context.Principal?.Identity?.Name
+                ?? context.Principal?.FindFirst("preferred_username")?.Value
+                ?? userId;
+            var ip = context.HttpContext.Connection.RemoteIpAddress?.ToString();
+            var userAgent = context.HttpContext.Request.Headers.UserAgent.ToString();
+
+            await auditLog.LogAsync(userId, username, "Login", "Login", "Success",
+                description: $"User {username} logged in successfully",
+                ipAddress: ip, userAgent: userAgent);
+        },
+        OnAuthenticationFailed = async context =>
+        {
+            var auditLog = context.HttpContext.RequestServices.GetRequiredService<AuditLogService>();
+            var ip = context.HttpContext.Connection.RemoteIpAddress?.ToString();
+            var userAgent = context.HttpContext.Request.Headers.UserAgent.ToString();
+
+            await auditLog.LogAsync(null, null, "Login", "Login", "Failed",
+                description: $"Authentication failed: {context.Exception?.Message}",
+                ipAddress: ip, userAgent: userAgent);
+
+            context.HandleResponse();
+            context.Response.Redirect("/Account/Login");
         }
     };
 });

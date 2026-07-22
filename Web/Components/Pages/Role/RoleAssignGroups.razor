@@ -1,0 +1,136 @@
+@inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject DialogService DialogService
+
+<RadzenStack Gap="1rem">
+    <RadzenText TextStyle="TextStyle.Body1">
+        Assign groups to role <strong>@RoleName</strong>
+    </RadzenText>
+
+    @if (isLoading)
+    {
+        <RadzenProgressBarCircular ProgressBarStyle="ProgressBarStyle.Primary" Value="100" ShowValue="false" Mode="ProgressBarMode.Indeterminate" />
+    }
+    else if (groupAssignments != null && groupAssignments.Count > 0)
+    {
+        <RadzenTextBox @bind-Value="@searchTerm" Placeholder="Search groups..." Style="width: 100%;" />
+
+        <RadzenStack Gap="0.5rem" Style="max-height: 400px; overflow-y: auto;">
+            @foreach (var group in FilteredGroups())
+            {
+                <RadzenCard Variant="Variant.Outlined" class="rz-p-2">
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                        <RadzenCheckBox @bind-Value="group.IsAssigned" />
+                        <RadzenText TextStyle="TextStyle.Body1"><strong>@group.GroupName</strong></RadzenText>
+                    </RadzenStack>
+                </RadzenCard>
+            }
+        </RadzenStack>
+    }
+    else
+    {
+        <RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary">No groups found.</RadzenText>
+    }
+
+    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem">
+        <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Light" Click="@(() => DialogService.Close(false))" />
+        <RadzenButton Text="Save" Icon="save" ButtonStyle="ButtonStyle.Primary" Click="@SaveAssignments"
+                      Disabled="@isSaving" Busy="@isSaving" />
+    </RadzenStack>
+</RadzenStack>
+
+@code {
+    [Parameter] public string RoleId { get; set; } = string.Empty;
+    [Parameter] public string RoleName { get; set; } = string.Empty;
+
+    private List<GroupCheckItem>? groupAssignments;
+    private string? searchTerm;
+    private bool isLoading;
+    private bool isSaving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var groupsResult = await ApiService.GetAsync<GroupListResponse>("group/get?pageSize=200", AppConfig.AccessToken);
+            var groups = groupsResult?.Items ?? new List<GroupDto>();
+
+            var role = await ApiService.GetAsync<RoleDto>($"role/get/{RoleId}", AppConfig.AccessToken);
+            var assignedMemberIds = role?.MemberIds ?? new List<string>();
+
+            groupAssignments = groups.Select(g => new GroupCheckItem
+            {
+                GroupId = g.Id,
+                GroupName = g.DisplayName,
+                IsAssigned = assignedMemberIds.Contains(g.Id)
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load groups: {ex.Message}");
+            groupAssignments = new List<GroupCheckItem>();
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private IEnumerable<GroupCheckItem> FilteredGroups()
+    {
+        if (groupAssignments == null) return Enumerable.Empty<GroupCheckItem>();
+        if (string.IsNullOrWhiteSpace(searchTerm)) return groupAssignments;
+        return groupAssignments.Where(g =>
+            g.GroupName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task SaveAssignments()
+    {
+        if (groupAssignments == null) return;
+
+        isSaving = true;
+        StateHasChanged();
+
+        try
+        {
+            var selectedGroupIds = groupAssignments.Where(g => g.IsAssigned).Select(g => g.GroupId).ToList();
+            await ApiService.PostAsync($"role/SyncRoleGroups/{RoleId}",
+                new { groupIds = selectedGroupIds }, AppConfig.AccessToken);
+
+            NotificationService.Notify(NotificationSeverity.Success, "Saved",
+                $"Groups assigned to role '{RoleName}' successfully");
+            DialogService.Close(true);
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to save: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private class GroupCheckItem
+    {
+        public string GroupId { get; set; } = string.Empty;
+        public string GroupName { get; set; } = string.Empty;
+        public bool IsAssigned { get; set; }
+    }
+
+    public class GroupListResponse
+    {
+        public List<GroupDto> Items { get; set; } = new();
+        public int Total { get; set; }
+    }
+}

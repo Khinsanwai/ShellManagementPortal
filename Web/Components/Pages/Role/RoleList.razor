@@ -1,0 +1,143 @@
+@page "/roles"
+@attribute [Authorize]
+@inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject DialogService DialogService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Roles - Shell Management Portal</PageTitle>
+
+<RadzenRow class="rz-p-4">
+    <RadzenColumn Size="12">
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                <RadzenButton Icon="arrow_back" ButtonStyle="ButtonStyle.Light" Click="@(() => NavigationManager.NavigateTo("/"))" Tooltip="Return to Dashboard" />
+                <RadzenText TextStyle="TextStyle.H4">Roles</RadzenText>
+            </RadzenStack>
+            <RadzenButton Text="Add Role" Icon="add" Click="@CreateRole" />
+        </RadzenStack>
+    </RadzenColumn>
+</RadzenRow>
+
+<RadzenDataGrid @ref="grid" Data="@roles" TItem="RoleDto" AllowSorting="true" AllowPaging="true" PageSize="10"
+                ShowPagingSummary="true">
+    <Columns>
+        <RadzenDataGridColumn TItem="RoleDto" Property="DisplayName" Title="Display Name" Sortable="true" Width="250px">
+            <Template Context="r">
+                <strong>@r.DisplayName</strong>
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="RoleDto" Title="Members" Sortable="false">
+            <Template Context="r">
+                @if (r.MemberDisplayNames.Any())
+                {
+                    var display = string.Join(", ", r.MemberDisplayNames.Take(3));
+                    @display
+                    if (r.MemberDisplayNames.Count > 3)
+                    {
+                        <span> ... (@r.MemberDisplayNames.Count total)</span>
+                    }
+                }
+                else
+                {
+                    <em class="rz-text-secondary">No members</em>
+                }
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="RoleDto" Property="CreatedDate" Title="Created Date" Sortable="true">
+            <Template Context="r">
+                @r.CreatedDate.ToString("yyyy-MM-dd HH:mm")
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="RoleDto" Title="Actions" Width="260px">
+            <Template Context="r">
+                <RadzenButton Icon="people" Size="ButtonSize.Small" Tooltip="Assign Groups" Click="@(() => AssignGroups(r))" />
+                <RadzenButton Icon="edit" Size="ButtonSize.Small" Tooltip="Edit" Click="@(() => EditRole(r))" />
+                <RadzenButton Icon="delete" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Danger" Tooltip="Delete"
+                              Click="@(() => DeleteRole(r))" />
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    RadzenDataGrid<RoleDto>? grid;
+    List<RoleDto>? roles;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            var result = await ApiService.GetAsync<RoleListResponse>("role/get", AppConfig.AccessToken);
+            roles = result?.Items;
+            if (grid != null) await grid.Reload();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load roles: {ex.Message}");
+        }
+    }
+
+    private async Task CreateRole()
+    {
+        var result = await DialogService.OpenAsync<RoleForm>("Add Role",
+            new Dictionary<string, object?> { { "IsEdit", false } },
+            new DialogOptions { Width = "450px", Resizable = true, Draggable = true });
+        if (result == true) await ReloadData();
+    }
+
+    private async Task EditRole(RoleDto role)
+    {
+        var result = await DialogService.OpenAsync<RoleForm>("Edit Role",
+            new Dictionary<string, object?> { { "IsEdit", true }, { "RoleId", role.Id }, { "ExistingName", role.DisplayName } },
+            new DialogOptions { Width = "450px", Resizable = true, Draggable = true });
+        if (result == true) await ReloadData();
+    }
+
+    private async Task AssignGroups(RoleDto role)
+    {
+        var result = await DialogService.OpenAsync<RoleAssignGroups>($"Assign Groups — {role.DisplayName}",
+            new Dictionary<string, object?> { { "RoleId", role.Id }, { "RoleName", role.DisplayName } },
+            new DialogOptions { Width = "550px", Height = "600px", Resizable = true, Draggable = true });
+        if (result == true) await ReloadData();
+    }
+
+    private async Task DeleteRole(RoleDto role)
+    {
+        var confirmed = await DialogService.Confirm(
+            $"Are you sure you want to delete role '{role.DisplayName}'?\n\nThis action cannot be undone.",
+            "Delete Role",
+            new ConfirmOptions { OkButtonText = "Delete", CancelButtonText = "Cancel" });
+
+        if (confirmed == true)
+        {
+            try
+            {
+                await ApiService.DeleteAsync($"role/delete/{role.Id}", AppConfig.AccessToken);
+                NotificationService.Notify(NotificationSeverity.Success, "Deleted", $"Role '{role.DisplayName}' deleted successfully");
+                await ReloadData();
+            }
+            catch (Exception ex)
+            {
+                NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to delete role: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task ReloadData()
+    {
+        if (grid != null) await grid.Reload();
+        else await LoadData();
+    }
+
+    public class RoleListResponse
+    {
+        public List<RoleDto> Items { get; set; } = new();
+        public int Total { get; set; }
+    }
+}

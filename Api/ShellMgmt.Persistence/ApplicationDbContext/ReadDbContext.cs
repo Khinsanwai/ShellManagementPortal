@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using ShellMgmt.Domain.AppModels;
 using ShellMgmt.Domain.ClaimModels;
+using ShellMgmt.Domain.UserlogModels;
 using ShellMgmt.Domain.InstitutionModels;
 using ShellMgmt.Domain.MenuItemModels;
 using ShellMgmt.Domain.OrgUnitModels;
@@ -19,6 +20,7 @@ public class ReadDbContext(DbContextOptions<ReadDbContext> options) : DbContext(
     public DbSet<OrgUnit> OrgUnit { get; set; }
     public DbSet<App> App { get; set; }
     public DbSet<UserMenuAssignment> UserMenuAssignment { get; set; }
+    public DbSet<Userlog> Userlog { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -28,8 +30,9 @@ public class ReadDbContext(DbContextOptions<ReadDbContext> options) : DbContext(
         modelBuilder.Entity<Claim>().ToTable("Claim", "appshell");
         modelBuilder.Entity<Institution>().ToTable("Institution", "appshell");
         modelBuilder.Entity<OrgUnit>().ToTable("OrgUnit", "appshell");
-        modelBuilder.Entity<App>().ToTable("App", "appshell");
+        modelBuilder.Entity<App>().ToTable("Applications", "appshell");
         modelBuilder.Entity<UserMenuAssignment>().ToTable("UserMenuAssignment", "appshell");
+        modelBuilder.Entity<Userlog>().ToTable("Userlogs", "appshell");
 
         modelBuilder.Entity<UserMenuAssignment>()
             .HasOne(ua => ua.MenuItem)

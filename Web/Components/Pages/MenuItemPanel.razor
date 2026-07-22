@@ -59,6 +59,11 @@ else
         return name?.ToLower() switch
         {
             "dashboard" => "dashboard",
+            "identity management" => "fingerprint",
+            "organization management" => "corporate_fare",
+            "application management" => "apps",
+            "authorization management" => "lock",
+            "system management" => "settings",
             "administration" => "admin_panel_settings",
             "settings" => "settings",
             "users" => "people",
@@ -70,8 +75,10 @@ else
             "menu items" => "menu",
             "user groups" => "group_add",
             "groups" => "group_add",
+            "roles" => "admin_panel_settings",
             "resources" => "key",
             "tenants" => "business",
+            "audit logs" => "history",
             "user menu assignment" => "assignment",
             _ => "folder"
         };
