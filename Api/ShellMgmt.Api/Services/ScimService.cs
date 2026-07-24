@@ -355,7 +355,16 @@ public class ScimService
         response.EnsureSuccessStatusCode();
         var content = await response.Content.ReadAsStringAsync();
         var scimResponse = JsonSerializer.Deserialize<ScimRoleListResponse>(content, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-        return scimResponse?.Resources.Select(MapToRoleDto).ToList() ?? new();
+        var roles = scimResponse?.Resources ?? new();
+
+        // WSO2 IS 7.x: list endpoint doesn't return members/users — fetch each role individually
+        var result = new List<RoleDto>();
+        foreach (var role in roles)
+        {
+            var fullRole = await GetRoleAsync(role.Id);
+            result.Add(fullRole ?? MapToRoleDto(role));
+        }
+        return result;
     }
 
     public async Task<RoleDto?> GetRoleAsync(string roleId)
@@ -424,24 +433,21 @@ public class ScimService
 
     public async Task AssignGroupToRoleAsync(string roleId, string groupId, string groupName)
     {
-        // WSO2: Roles accept groups as members via PATCH
-        var patchBody = new ScimPatchRequest
+        // WSO2 IS 7.x: Role-group assignment is done by patching the GROUP (not the role).
+        // Roles are added to groups via: PATCH /Groups/{groupId} with op "add" and value.roles
+        var patchBody = new
         {
-            Operations = new List<ScimPatchOperation>
+            schemas = new[] { "urn:ietf:params:scim:api:messages:2.0:PatchOp" },
+            Operations = new[]
             {
-                new()
+                new
                 {
-                    Op = "add",
-                    Value = new Dictionary<string, object>
+                    op = "add",
+                    value = new
                     {
-                        ["members"] = new List<ScimPatchMember>
+                        roles = new[]
                         {
-                            new()
-                            {
-                                Value = groupId,
-                                Display = groupName,
-                                Ref = $"{_baseUrl}/Groups/{groupId}"
-                            }
+                            new { value = roleId }
                         }
                     }
                 }
@@ -449,9 +455,9 @@ public class ScimService
         };
 
         var json = JsonSerializer.Serialize(patchBody);
-        _logger.LogInformation("AssignGroupToRole PATCH: {Body}", json);
+        _logger.LogInformation("AssignGroupToRole PATCH Group {GroupId} with role {RoleId}: {Body}", groupId, roleId, json);
         var content = new StringContent(json, Encoding.UTF8, "application/scim+json");
-        var request = new HttpRequestMessage(HttpMethod.Patch, $"{_baseUrl}/Roles/{roleId}") { Content = content };
+        var request = new HttpRequestMessage(HttpMethod.Patch, $"{_baseUrl}/Groups/{groupId}") { Content = content };
         var response = await _httpClient.SendAsync(request);
         var responseBody = await response.Content.ReadAsStringAsync();
         if (!response.IsSuccessStatusCode)
@@ -464,22 +470,24 @@ public class ScimService
 
     public async Task RemoveGroupFromRoleAsync(string roleId, string groupId)
     {
-        var patchBody = new ScimPatchRequest
+        // WSO2 IS 7.x: Remove role from group by patching the GROUP endpoint.
+        var patchBody = new
         {
-            Operations = new List<ScimPatchOperation>
+            schemas = new[] { "urn:ietf:params:scim:api:messages:2.0:PatchOp" },
+            Operations = new[]
             {
-                new()
+                new
                 {
-                    Op = "remove",
-                    Path = $"members[value eq \"{groupId}\"]"
+                    op = "remove",
+                    path = $"roles[value eq \"{roleId}\"]"
                 }
             }
         };
 
         var json = JsonSerializer.Serialize(patchBody);
-        _logger.LogInformation("RemoveGroupFromRole PATCH: {Body}", json);
+        _logger.LogInformation("RemoveGroupFromRole PATCH Group {GroupId} remove role {RoleId}: {Body}", groupId, roleId, json);
         var content = new StringContent(json, Encoding.UTF8, "application/scim+json");
-        var request = new HttpRequestMessage(HttpMethod.Patch, $"{_baseUrl}/Roles/{roleId}") { Content = content };
+        var request = new HttpRequestMessage(HttpMethod.Patch, $"{_baseUrl}/Groups/{groupId}") { Content = content };
         var response = await _httpClient.SendAsync(request);
         var responseBody = await response.Content.ReadAsStringAsync();
         if (!response.IsSuccessStatusCode)
@@ -492,33 +500,93 @@ public class ScimService
 
     public async Task SyncRoleGroupsAsync(string roleId, List<string> targetGroupIds)
     {
+        // WSO2 IS 7.x: Role-group mapping is stored on the Group resource, not the Role.
+        // We must query all groups, check which ones have this role, and patch accordingly.
         var role = await GetRoleAsync(roleId)
             ?? throw new Exception($"Role {roleId} not found");
 
-        var currentMemberIds = role.MemberIds;
-        var groups = await GetGroupsAsync();
+        var allGroups = await GetGroupsAsync();
 
-        // Add new groups
+        // Find groups that currently have this role assigned
+        var currentAssignedGroupIds = new List<string>();
+        foreach (var group in allGroups)
+        {
+            // Need to fetch full group details to see roles
+            var fullGroup = await GetGroupAsync(group.Id);
+            if (fullGroup != null)
+            {
+                // Check if this group has the role by looking at group's roles
+                var groupRoles = await GetGroupRolesAsync(group.Id);
+                if (groupRoles.Contains(roleId))
+                {
+                    currentAssignedGroupIds.Add(group.Id);
+                }
+            }
+        }
+
+        // Add role to groups that should have it but don't
         foreach (var groupId in targetGroupIds)
         {
-            if (!currentMemberIds.Contains(groupId))
+            if (!currentAssignedGroupIds.Contains(groupId))
             {
-                var group = groups.FirstOrDefault(g => g.Id == groupId);
+                var group = allGroups.FirstOrDefault(g => g.Id == groupId);
                 var groupName = group?.DisplayName ?? groupId;
                 await AssignGroupToRoleAsync(roleId, groupId, groupName);
                 _logger.LogInformation("Assigned group {GroupId} to role {RoleId}", groupId, roleId);
             }
         }
 
-        // Remove groups no longer assigned
-        foreach (var memberId in currentMemberIds)
+        // Remove role from groups that shouldn't have it
+        foreach (var groupId in currentAssignedGroupIds)
         {
-            if (!targetGroupIds.Contains(memberId))
+            if (!targetGroupIds.Contains(groupId))
             {
-                await RemoveGroupFromRoleAsync(roleId, memberId);
-                _logger.LogInformation("Removed group {GroupId} from role {RoleId}", memberId, roleId);
+                await RemoveGroupFromRoleAsync(roleId, groupId);
+                _logger.LogInformation("Removed group {GroupId} from role {RoleId}", groupId, roleId);
             }
         }
+    }
+
+    public async Task<List<string>> GetGroupIdsForRoleAsync(string roleId)
+    {
+        // WSO2 IS 7.x: find which groups have this role assigned
+        var allGroups = await GetGroupsAsync();
+        var assignedGroupIds = new List<string>();
+
+        foreach (var group in allGroups)
+        {
+            var roleIds = await GetGroupRolesAsync(group.Id);
+            if (roleIds.Contains(roleId))
+            {
+                assignedGroupIds.Add(group.Id);
+            }
+        }
+        return assignedGroupIds;
+    }
+
+    private async Task<List<string>> GetGroupRolesAsync(string groupId)
+    {
+        // Fetch the full group resource and extract role IDs
+        var url = $"{_baseUrl}/Groups/{groupId}";
+        var response = await _httpClient.GetAsync(url);
+        if (!response.IsSuccessStatusCode) return new();
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(content);
+        var root = doc.RootElement;
+
+        var roleIds = new List<string>();
+        if (root.TryGetProperty("roles", out var roles))
+        {
+            foreach (var role in roles.EnumerateArray())
+            {
+                if (role.TryGetProperty("value", out var value))
+                {
+                    roleIds.Add(value.GetString() ?? "");
+                }
+            }
+        }
+        return roleIds;
     }
 
     public async Task SyncUserRoleAssignmentsAsync(string userId, string userName, List<string> targetRoleIds)
@@ -532,12 +600,15 @@ public class ScimService
 
     private static RoleDto MapToRoleDto(ScimRoleResource role)
     {
+        // WSO2 IS 7.x returns "users" on individual fetch, older versions use "members"
+        var memberList = role.Members ?? role.Users;
+
         return new RoleDto
         {
             Id = role.Id,
             DisplayName = role.DisplayName,
-            MemberIds = role.Members?.Select(m => m.Value).ToList() ?? new(),
-            MemberDisplayNames = role.Members?.Select(m => m.Display).ToList() ?? new(),
+            MemberIds = memberList?.Select(m => m.Value).ToList() ?? new(),
+            MemberDisplayNames = memberList?.Select(m => m.Display).ToList() ?? new(),
             CreatedDate = role.Meta?.Created ?? DateTime.MinValue,
             LastModifiedDate = role.Meta?.LastModified ?? DateTime.MinValue
         };

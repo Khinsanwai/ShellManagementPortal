@@ -27,7 +27,7 @@
                 <strong>@r.DisplayName</strong>
             </Template>
         </RadzenDataGridColumn>
-        <RadzenDataGridColumn TItem="RoleDto" Title="Members" Sortable="false">
+        <RadzenDataGridColumn TItem="RoleDto" Title="Assigned Users" Sortable="false">
             <Template Context="r">
                 @if (r.MemberDisplayNames.Any())
                 {
@@ -40,13 +40,20 @@
                 }
                 else
                 {
-                    <em class="rz-text-secondary">No members</em>
+                    <em class="rz-text-secondary">—</em>
                 }
             </Template>
         </RadzenDataGridColumn>
         <RadzenDataGridColumn TItem="RoleDto" Property="CreatedDate" Title="Created Date" Sortable="true">
             <Template Context="r">
-                @r.CreatedDate.ToString("yyyy-MM-dd HH:mm")
+                @if (r.CreatedDate == DateTime.MinValue)
+                {
+                    <span class="rz-text-secondary">—</span>
+                }
+                else
+                {
+                    @r.CreatedDate.ToString("yyyy-MM-dd HH:mm")
+                }
             </Template>
         </RadzenDataGridColumn>
         <RadzenDataGridColumn TItem="RoleDto" Title="Actions" Width="260px">

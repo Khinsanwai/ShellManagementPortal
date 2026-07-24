@@ -63,14 +63,15 @@
             var groupsResult = await ApiService.GetAsync<GroupListResponse>("group/get?pageSize=200", AppConfig.AccessToken);
             var groups = groupsResult?.Items ?? new List<GroupDto>();
 
-            var role = await ApiService.GetAsync<RoleDto>($"role/get/{RoleId}", AppConfig.AccessToken);
-            var assignedMemberIds = role?.MemberIds ?? new List<string>();
+            // WSO2 IS 7.x: get which groups currently have this role
+            var assignedGroupIds = await ApiService.GetAsync<List<string>>($"role/GetAssignedGroups/{RoleId}", AppConfig.AccessToken)
+                                   ?? new List<string>();
 
             groupAssignments = groups.Select(g => new GroupCheckItem
             {
                 GroupId = g.Id,
                 GroupName = g.DisplayName,
-                IsAssigned = assignedMemberIds.Contains(g.Id)
+                IsAssigned = assignedGroupIds.Contains(g.Id)
             }).ToList();
         }
         catch (Exception ex)

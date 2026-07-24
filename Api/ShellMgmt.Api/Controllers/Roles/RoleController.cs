@@ -117,6 +117,24 @@ public sealed class RoleController(ScimService scimService, ILogger<RoleControll
         }
     }
 
+    [HttpGet("GetAssignedGroups/{roleId}")]
+    public async Task<IActionResult> GetAssignedGroups(string roleId)
+    {
+        try
+        {
+            var role = await scimService.GetRoleAsync(roleId);
+            if (role == null) return NotFound(new { error = "Role not found" });
+
+            var groupIds = await scimService.GetGroupIdsForRoleAsync(roleId);
+            return Ok(groupIds);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error fetching assigned groups for role {Id}", roleId);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
     [HttpPost("SyncRoleGroups/{roleId}")]
     public async Task<IActionResult> SyncRoleGroups(string roleId, [FromBody] SyncRoleGroupsRequest request)
     {

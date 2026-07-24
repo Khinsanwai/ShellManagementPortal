@@ -21,6 +21,7 @@ public class ReadDbContext(DbContextOptions<ReadDbContext> options) : DbContext(
     public DbSet<App> App { get; set; }
     public DbSet<UserMenuAssignment> UserMenuAssignment { get; set; }
     public DbSet<Userlog> Userlog { get; set; }
+    public DbSet<UserChildApplicationAssignment> UserChildApplicationAssignment { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -33,11 +34,17 @@ public class ReadDbContext(DbContextOptions<ReadDbContext> options) : DbContext(
         modelBuilder.Entity<App>().ToTable("Applications", "appshell");
         modelBuilder.Entity<UserMenuAssignment>().ToTable("UserMenuAssignment", "appshell");
         modelBuilder.Entity<Userlog>().ToTable("Userlogs", "appshell");
+        modelBuilder.Entity<UserChildApplicationAssignment>().ToTable("UserChildApplicationAssignment", "appshell");
 
         modelBuilder.Entity<UserMenuAssignment>()
             .HasOne(ua => ua.MenuItem)
             .WithMany()
             .HasForeignKey(ua => ua.MenuItemId);
+
+        modelBuilder.Entity<UserChildApplicationAssignment>()
+            .HasOne(ua => ua.Application)
+            .WithMany()
+            .HasForeignKey(ua => ua.ApplicationId);
     }
 
     public override int SaveChanges()

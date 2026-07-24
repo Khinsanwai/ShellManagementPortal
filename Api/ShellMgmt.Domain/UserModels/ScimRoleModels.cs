@@ -28,6 +28,10 @@ public class ScimRoleResource
     [JsonPropertyName("members")]
     public List<ScimRoleMember>? Members { get; set; }
 
+    // WSO2 IS 7.x returns "users" instead of "members" on individual role fetch
+    [JsonPropertyName("users")]
+    public List<ScimRoleMember>? Users { get; set; }
+
     [JsonPropertyName("meta")]
     public ScimMeta? Meta { get; set; }
 }

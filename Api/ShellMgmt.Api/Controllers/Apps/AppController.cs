@@ -6,6 +6,7 @@ using ShellMgmt.Application.AppService.Create;
 using ShellMgmt.Application.AppService.Delete;
 using ShellMgmt.Application.AppService.Get;
 using ShellMgmt.Application.AppService.Update;
+using ShellMgmt.Domain.AppModels;
 
 namespace ShellMgmt.Api.Controllers.Apps;
 
@@ -20,6 +21,22 @@ public sealed class AppController(IMediator mediator, ILogger<AppController> log
     {
         var result = await mediator.Send(query, cancellationToken);
         return Ok(result);
+    }
+
+    [HttpGet("GetAll")]
+    public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var query = new GetAppQuery(Take: 1000);
+            var result = await mediator.Send(query, cancellationToken);
+            return Ok(result.Items);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error fetching all applications");
+            return StatusCode(500, new { error = ex.Message });
+        }
     }
 
     [HttpGet("GetById/{id}")]

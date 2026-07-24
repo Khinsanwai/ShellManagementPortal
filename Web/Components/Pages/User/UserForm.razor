@@ -110,6 +110,24 @@
             </RadzenAccordion>
         }
 
+        <RadzenAccordion>
+            <RadzenAccordionItem Text="Child Application Assignments">
+                <RadzenStack Gap="0.5rem">
+                    @if (availableApps != null && availableApps.Count > 0)
+                    {
+                        @foreach (var a in availableApps)
+                        {
+                            <RadzenCheckBox @bind-Value="a.IsAssigned" Label="@a.ApplicationName" />
+                        }
+                    }
+                    else
+                    {
+                        <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary">No applications available</RadzenText>
+                    }
+                </RadzenStack>
+            </RadzenAccordionItem>
+        </RadzenAccordion>
+
         <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem">
             <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Light" Click="@(() => DialogService.Close(false))" />
             <RadzenButton Text="Save" ButtonType="ButtonType.Submit" ButtonStyle="ButtonStyle.Primary" />
@@ -123,6 +141,8 @@
 
     private UserDto model = new();
     private List<UserGroupAssignment>? availableGroups;
+    private List<ChildAppAssignment>? availableApps;
+    private bool appsLoaded = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -145,6 +165,16 @@
             {
                 NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load user: {ex.Message}");
             }
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !appsLoaded)
+        {
+            appsLoaded = true;
+            await LoadApps();
+            StateHasChanged();
         }
     }
 
@@ -184,6 +214,76 @@
         }
     }
 
+    private async Task LoadApps()
+    {
+        try
+        {
+            // Use HttpClient directly for debugging
+            var handler = new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+            };
+            var client = new HttpClient(handler);
+            if (!string.IsNullOrEmpty(AppConfig.AccessToken))
+            {
+                client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", AppConfig.AccessToken);
+            }
+
+            var url = string.Format(AppConfig.Url, "app/GetAll");
+            Console.WriteLine($"[UserForm] Calling URL: {url}");
+
+            var response = await client.GetAsync(url);
+            var json = await response.Content.ReadAsStringAsync();
+            Console.WriteLine($"[UserForm] Response status: {response.StatusCode}");
+            Console.WriteLine($"[UserForm] Response body: {json}");
+
+            if (response.IsSuccessStatusCode)
+            {
+                var allApps = System.Text.Json.JsonSerializer.Deserialize<List<AppDto>>(json,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                Console.WriteLine($"[UserForm] Deserialized {allApps?.Count ?? 0} apps");
+
+                if (allApps != null && allApps.Count > 0)
+                {
+                    if (IsEdit && !string.IsNullOrEmpty(UserId))
+                    {
+                        var assignments = await ApiService.GetAsync<List<UserChildApplicationAssignmentDto>>($"UserChildApplication/GetUserApps/{UserId}", AppConfig.AccessToken);
+                        var assignedAppIds = assignments?.Select(a => a.ApplicationId).ToHashSet() ?? new HashSet<int>();
+
+                        availableApps = allApps.Select(a => new ChildAppAssignment
+                        {
+                            ApplicationId = a.Id ?? 0,
+                            ApplicationName = a.Name ?? string.Empty,
+                            IsAssigned = assignedAppIds.Contains(a.Id ?? 0)
+                        }).ToList();
+                    }
+                    else
+                    {
+                        availableApps = allApps.Select(a => new ChildAppAssignment
+                        {
+                            ApplicationId = a.Id ?? 0,
+                            ApplicationName = a.Name ?? string.Empty,
+                            IsAssigned = false
+                        }).ToList();
+                    }
+
+                    Console.WriteLine($"[UserForm] Created {availableApps.Count} ChildAppAssignment items");
+                }
+            }
+            else
+            {
+                Console.WriteLine($"[UserForm] API returned error: {response.StatusCode} - {json}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[UserForm] Error loading apps: {ex.Message}");
+            Console.WriteLine($"[UserForm] Stack trace: {ex.StackTrace}");
+            NotificationService.Notify(NotificationSeverity.Warning, "Warning", $"Could not load applications: {ex.Message}");
+        }
+    }
+
     private async Task OnSubmit(UserDto user)
     {
         try
@@ -202,6 +302,15 @@
                 // Sync group assignments
                 var selectedGroupIds = availableGroups?.Where(g => g.IsAssigned).Select(g => g.GroupId).ToList() ?? new();
                 await ApiService.PostAsync($"user/SyncUserGroups/{UserId}", new { groupIds = selectedGroupIds }, AppConfig.AccessToken);
+
+                // Sync child application assignments
+                var selectedAppIds = availableApps?.Where(a => a.IsAssigned).Select(a => a.ApplicationId).ToList() ?? new();
+                await ApiService.PostAsync("UserChildApplication/AssignApps", new
+                {
+                    Wso2UserId = UserId,
+                    Wso2UserName = model.UserName,
+                    ApplicationIds = selectedAppIds
+                }, AppConfig.AccessToken);
 
                 NotificationService.Notify(NotificationSeverity.Success, "Updated", "User updated successfully");
             }
@@ -231,6 +340,18 @@
                     {
                         await ApiService.PostAsync($"user/SyncUserGroups/{createdUser.Id}", new { groupIds = selectedGroupIds }, AppConfig.AccessToken);
                     }
+
+                    // Assign child applications to the newly created user
+                    var selectedAppIds = availableApps?.Where(a => a.IsAssigned).Select(a => a.ApplicationId).ToList() ?? new();
+                    if (selectedAppIds.Any())
+                    {
+                        await ApiService.PostAsync("UserChildApplication/AssignApps", new
+                        {
+                            Wso2UserId = createdUser.Id,
+                            Wso2UserName = createdUser.UserName,
+                            ApplicationIds = selectedAppIds
+                        }, AppConfig.AccessToken);
+                    }
                 }
 
                 NotificationService.Notify(NotificationSeverity.Success, "Created", "User created successfully");
@@ -248,5 +369,21 @@
     {
         public List<GroupDto> Items { get; set; } = new();
         public int Total { get; set; }
+    }
+
+    public class UserChildApplicationAssignmentDto
+    {
+        public Guid? Id { get; set; }
+        public string Wso2UserId { get; set; } = string.Empty;
+        public string Wso2UserName { get; set; } = string.Empty;
+        public int ApplicationId { get; set; }
+        public string? ApplicationName { get; set; }
+    }
+
+    public class ChildAppAssignment
+    {
+        public int ApplicationId { get; set; }
+        public string ApplicationName { get; set; } = string.Empty;
+        public bool IsAssigned { get; set; }
     }
 }
