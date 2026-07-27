@@ -12,7 +12,7 @@ using ShellMgmt.Persistence.ApplicationDbContext;
 namespace ShellMgmt.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260723092510_AddUserChildApplicationAssignment")]
+    [Migration("20260724041634_AddUserChildApplicationAssignment")]
     partial class AddUserChildApplicationAssignment
     {
         /// <inheritdoc />

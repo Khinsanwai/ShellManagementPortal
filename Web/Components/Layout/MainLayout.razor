@@ -1,3 +1,5 @@
+@using ShellMgmt.Domain.AppModels
+@using ShellMgmt.Domain.MenuItemModels
 @using ShellMgmt.Web.Constants
 @inherits LayoutComponentBase
 @inject NavigationManager Navigation
@@ -30,6 +32,6 @@
         @Body
     </RadzenBody>
     <RadzenSidebar Expanded="@sidebarExpanded" style="z-index: 2">
-        <MenuItemPanel MenuItems="@(menuItems ?? new List<MenuItemDto>())" />
+        <MenuItemPanel MenuItems="@(menuItems ?? new List<MenuItemDto>())" AssignedApps="@(assignedApps ?? new List<UserChildApplicationAssignmentDto>())" />
     </RadzenSidebar>
 </RadzenLayout>

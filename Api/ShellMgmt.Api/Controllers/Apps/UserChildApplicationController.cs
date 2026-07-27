@@ -20,7 +20,37 @@ public sealed class UserChildApplicationController(AppDbContext dbContext, ILogg
         {
             var assignments = await dbContext.UserChildApplicationAssignment
                 .Include(ua => ua.Application)
-                .Where(ua => ua.Wso2UserId == wso2UserId)
+                .Where(ua => ua.Wso2UserId == wso2UserId && ua.Application != null && ua.Application.Status && ua.Application.IsVisible)
+                .OrderBy(ua => ua.Application != null ? ua.Application.DisplayOrder : 0)
+                .Select(ua => new UserChildApplicationAssignmentDto
+                {
+                    Id = ua.Id,
+                    Wso2UserId = ua.Wso2UserId,
+                    Wso2UserName = ua.Wso2UserName,
+                    ApplicationId = ua.ApplicationId,
+                    ApplicationName = ua.Application != null ? ua.Application.Name : null,
+                    ApplicationUrl = ua.Application != null ? ua.Application.URL : null,
+                    ApplicationIcon = ua.Application != null ? ua.Application.Icon : null,
+                    ApplicationDisplayOrder = ua.Application != null ? ua.Application.DisplayOrder : 0
+                })
+                .ToListAsync(cancellationToken);
+
+            return Ok(assignments);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error fetching user child application assignments for {UserId}", wso2UserId);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("GetAll")]
+    public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var assignments = await dbContext.UserChildApplicationAssignment
+                .Include(ua => ua.Application)
                 .Select(ua => new UserChildApplicationAssignmentDto
                 {
                     Id = ua.Id,
@@ -35,7 +65,31 @@ public sealed class UserChildApplicationController(AppDbContext dbContext, ILogg
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error fetching user child application assignments for {UserId}", wso2UserId);
+            logger.LogError(ex, "Error fetching all user child application assignments");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpDelete("Delete/{id}")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var assignment = await dbContext.UserChildApplicationAssignment
+                .FirstOrDefaultAsync(ua => ua.Id == id, cancellationToken);
+
+            if (assignment == null)
+                return NotFound(new { error = "Assignment not found" });
+
+            dbContext.UserChildApplicationAssignment.Remove(assignment);
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            logger.LogInformation("Child application assignment {Id} deleted", id);
+            return Ok(new { message = "Assignment deleted successfully" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error deleting child application assignment {Id}", id);
             return StatusCode(500, new { error = ex.Message });
         }
     }
@@ -74,7 +128,7 @@ public sealed class UserChildApplicationController(AppDbContext dbContext, ILogg
         catch (Exception ex)
         {
             logger.LogError(ex, "Error assigning child applications to user {UserId}", request.Wso2UserId);
-            return StatusCode(500, new { error = ex.Message });
+            return StatusCode(500, new { error = ex.InnerException?.Message ?? ex.Message });
         }
     }
 }

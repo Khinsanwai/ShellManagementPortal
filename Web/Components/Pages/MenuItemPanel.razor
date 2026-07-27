@@ -1,12 +1,28 @@
 @using Microsoft.AspNetCore.Components
 @using Radzen
 @using Radzen.Blazor
+@using ShellMgmt.Domain.AppModels
 @using ShellMgmt.Domain.MenuItemModels
 @inject NavigationManager NavigationManager
 
 <RadzenStack AlignItems="Radzen.AlignItems.Center" JustifyContent="Radzen.JustifyContent.Start" class="rz-py-4 rz-py-lg-6" Style="padding: 5px;">
     <RadzenImage Path="images/mini-side-bar-logo.png" style="width: 100px; height: 90px;" AlternateText="Application logo" />
 </RadzenStack>
+
+@* Assigned Applications *@
+@if (AssignedApps != null && AssignedApps.Any())
+{
+    <RadzenPanelMenu>
+        <RadzenPanelMenuItem Text="Applications" Icon="apps" Expanded="true">
+            @foreach (var app in AssignedApps)
+            {
+                <RadzenPanelMenuItem Text="@app.ApplicationName"
+                                     Icon="@(GetAppIcon(app))"
+                                     Path="@($"/app/{app.ApplicationId}")" />
+            }
+        </RadzenPanelMenuItem>
+    </RadzenPanelMenu>
+}
 
 @* Dynamic Menu from Database *@
 @if (MenuItems != null && MenuItems.Any())
@@ -37,7 +53,7 @@
         }
     </RadzenPanelMenu>
 }
-else
+else if (AssignedApps == null || !AssignedApps.Any())
 {
     <RadzenStack Orientation="Orientation.Vertical" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" class="rz-p-4">
         <RadzenIcon Icon="menu" Style="font-size: 48px; color: var(--rz-text-disabled-color);" />
@@ -48,6 +64,16 @@ else
 @code {
     [Parameter]
     public List<MenuItemDto> MenuItems { get; set; } = [];
+
+    [Parameter]
+    public List<UserChildApplicationAssignmentDto> AssignedApps { get; set; } = [];
+
+    private static string GetAppIcon(UserChildApplicationAssignmentDto app)
+    {
+        if (!string.IsNullOrEmpty(app.ApplicationIcon))
+            return app.ApplicationIcon;
+        return "apps";
+    }
 
     private static string GetMenuIcon(string? name)
     {
@@ -76,6 +102,7 @@ else
             "audit logs" => "history",
             "audit dashboard" => "dashboard",
             "user menu assignment" => "assignment",
+            "user app assignment" => "assignment_ind",
             _ => "folder"
         };
     }

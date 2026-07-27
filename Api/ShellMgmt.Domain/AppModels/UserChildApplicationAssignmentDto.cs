@@ -7,6 +7,9 @@ public class UserChildApplicationAssignmentDto
     public string Wso2UserName { get; set; } = string.Empty;
     public int ApplicationId { get; set; }
     public string? ApplicationName { get; set; }
+    public string? ApplicationUrl { get; set; }
+    public string? ApplicationIcon { get; set; }
+    public int ApplicationDisplayOrder { get; set; }
 }
 
 public class UserChildAppMappingRequest

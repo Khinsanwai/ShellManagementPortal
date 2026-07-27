@@ -10,6 +10,8 @@ public class App
     public string? Description { get; set; }
     public string? Version { get; set; }
     public bool Status { get; set; } = true;
+    public int DisplayOrder { get; set; }
+    public bool IsVisible { get; set; } = true;
     public DateTime CreatedDate { get; set; }
     public DateTime? UpdatedDate { get; set; }
 }

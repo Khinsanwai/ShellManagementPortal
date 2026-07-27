@@ -45,5 +45,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .HasOne(ua => ua.Application)
             .WithMany()
             .HasForeignKey(ua => ua.ApplicationId);
+
+        modelBuilder.Entity<App>()
+            .Property(a => a.DisplayOrder)
+            .HasDefaultValue(0);
+
+        modelBuilder.Entity<App>()
+            .Property(a => a.IsVisible)
+            .HasDefaultValue(true);
     }
 }

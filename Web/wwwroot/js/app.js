@@ -15,3 +15,21 @@ function downloadFileFromBase64(fileName, base64Data, mimeType) {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 }
+
+var _pendingChildToken = null;
+
+function registerChildTokenHandshake(token) {
+    _pendingChildToken = token;
+}
+
+window.addEventListener("message", function (event) {
+    if (event.data && event.data.type === "child_ready" && _pendingChildToken) {
+        var iframe = document.querySelector('iframe');
+        if (iframe && iframe.contentWindow) {
+            iframe.contentWindow.postMessage({
+                type: "access_token",
+                token: _pendingChildToken
+            }, "*");
+        }
+    }
+});
