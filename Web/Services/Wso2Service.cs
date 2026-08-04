@@ -54,7 +54,167 @@ public class Wso2Service(HttpClient httpClient, IConfiguration config, ILogger<W
             return tokenResponse?.AccessToken;
         }
 
-        _logger.LogWarning("Failed to get RPT. Status: {StatusCode}", response.StatusCode);
+        var errorBody = await response.Content.ReadAsStringAsync();
+        _logger.LogWarning("Failed to get RPT. Status: {StatusCode}, Body: {ErrorBody}", response.StatusCode, errorBody);
+        return null;
+    }
+
+    /// <summary>
+    /// Get role details including assigned permissions from WSO2 SCIM2 API
+    /// </summary>
+    public async Task<List<RolePermission>> GetRolePermissionsAsync(string roleName)
+    {
+        var permissions = new List<RolePermission>();
+        var wso2BaseUrl = _config["WSO2:OidcAuthority"]?.Replace("/oauth2/oidcdiscovery", "")
+                          ?? _config["WSO2:Authority"]?.Replace("/oauth2/token", "")
+                          ?? "https://localhost:9443";
+
+        try
+        {
+            var adminToken = await GetAdminAccessTokenAsync();
+            if (string.IsNullOrEmpty(adminToken))
+            {
+                _logger.LogWarning("Failed to get admin access token for role permission lookup");
+                return permissions;
+            }
+
+            // Use SCIM2 API to get role details
+            var scimUrl = $"{wso2BaseUrl}/scim2/Roles?filter=displayName eq \"{roleName}\"";
+            var request = new HttpRequestMessage(HttpMethod.Get, scimUrl);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+
+            var response = await _httpClient.SendAsync(request);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync();
+                _logger.LogInformation("SCIM2 Roles response: {Content}", content);
+
+                var scimResponse = JsonSerializer.Deserialize<ScimRolesResponse>(content,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                if (scimResponse?.Resources != null)
+                {
+                    foreach (var resource in scimResponse.Resources)
+                    {
+                        if (resource.Permissions != null)
+                        {
+                            foreach (var permission in resource.Permissions)
+                            {
+                                permissions.Add(new RolePermission
+                                {
+                                    RoleName = roleName,
+                                    ScopeName = permission.Value ?? string.Empty,
+                                    Display = permission.Display ?? permission.Value ?? string.Empty
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            else
+            {
+                _logger.LogWarning("SCIM2 Roles request failed. Status: {StatusCode}", await response.Content.ReadAsStringAsync());
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching role permissions for role: {RoleName}", roleName);
+        }
+
+        return permissions;
+    }
+
+    /// <summary>
+    /// Get all roles assigned to a user and their permissions
+    /// </summary>
+    public async Task<List<RolePermission>> GetUserRolePermissionsAsync(string wso2UserId)
+    {
+        var allPermissions = new List<RolePermission>();
+        var wso2BaseUrl = _config["WSO2:OidcAuthority"]?.Replace("/oauth2/oidcdiscovery", "")
+                          ?? _config["WSO2:Authority"]?.Replace("/oauth2/token", "")
+                          ?? "https://localhost:9443";
+
+        try
+        {
+            var adminToken = await GetAdminAccessTokenAsync();
+            if (string.IsNullOrEmpty(adminToken))
+            {
+                return allPermissions;
+            }
+
+            // Get user's groups/roles from SCIM2
+            var userUrl = $"{wso2BaseUrl}/scim2/Users/{wso2UserId}?attributes=groups";
+            var request = new HttpRequestMessage(HttpMethod.Get, userUrl);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+
+            var response = await _httpClient.SendAsync(request);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync();
+                var userResponse = JsonSerializer.Deserialize<ScimUserResponse>(content,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                if (userResponse?.Groups != null)
+                {
+                    foreach (var group in userResponse.Groups)
+                    {
+                        if (!string.IsNullOrEmpty(group.Value))
+                        {
+                            var rolePermissions = await GetRolePermissionsAsync(group.Value);
+                            allPermissions.AddRange(rolePermissions);
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching user role permissions for user: {UserId}", wso2UserId);
+        }
+
+        return allPermissions;
+    }
+
+    private async Task<string?> GetAdminAccessTokenAsync()
+    {
+        try
+        {
+            var wso2BaseUrl = _config["WSO2:OidcAuthority"]?.Replace("/oauth2/oidcdiscovery", "")
+                              ?? _config["WSO2:Authority"]?.Replace("/oauth2/token", "")
+                              ?? "https://localhost:9443";
+
+            var tokenUrl = $"{wso2BaseUrl}/oauth2/token";
+            var request = new HttpRequestMessage(HttpMethod.Post, tokenUrl);
+
+            var formData = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("grant_type", "password"),
+                new KeyValuePair<string, string>("client_id", _config["WSO2:ClientId"]!),
+                new KeyValuePair<string, string>("client_secret", _config["WSO2:ClientSecret"]!),
+                new KeyValuePair<string, string>("username", _config["WSO2:AdminUser"]!),
+                new KeyValuePair<string, string>("password", _config["WSO2:AdminPassword"]!),
+                new KeyValuePair<string, string>("scope", "openid"),
+            ]);
+
+            request.Content = formData;
+
+            var response = await _httpClient.SendAsync(request);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync();
+                var tokenResponse = JsonSerializer.Deserialize<TokenResponse>(content,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                return tokenResponse?.AccessToken;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get admin access token");
+        }
+
         return null;
     }
 }

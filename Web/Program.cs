@@ -91,7 +91,7 @@ builder.Services.AddAuthentication(options =>
 
     options.MapInboundClaims = false;
     options.TokenValidationParameters.NameClaimType = JwtRegisteredClaimNames.Name;
-    options.TokenValidationParameters.RoleClaimType = "groups";
+    options.TokenValidationParameters.RoleClaimType = "roles";
 
     options.SaveTokens = true;
     options.GetClaimsFromUserInfoEndpoint = true;
@@ -109,6 +109,16 @@ builder.Services.AddAuthentication(options =>
     options.Scope.Add("email");
     options.Scope.Add("groups");
     options.Scope.Add("roles");
+
+    // Add custom API resource scopes from configuration
+    var apiResourceScopes = wso2Settings.GetSection("ApiResourceScopes").Get<string[]>();
+    if (apiResourceScopes != null)
+    {
+        foreach (var scope in apiResourceScopes)
+        {
+            options.Scope.Add(scope);
+        }
+    }
 
     options.Events = new OpenIdConnectEvents
     {

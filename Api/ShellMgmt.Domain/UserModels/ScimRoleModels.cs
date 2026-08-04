@@ -100,3 +100,13 @@ public class ScimPatchRequest
     [JsonPropertyName("Operations")]
     public List<ScimPatchOperation> Operations { get; set; } = new();
 }
+
+/// <summary>
+/// Represents a permission/scope assigned to a role.
+/// </summary>
+public class RolePermission
+{
+    public string RoleName { get; set; } = string.Empty;
+    public string ScopeName { get; set; } = string.Empty;
+    public string Display { get; set; } = string.Empty;
+}

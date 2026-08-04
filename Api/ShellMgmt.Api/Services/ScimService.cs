@@ -614,6 +614,99 @@ public class ScimService
         };
     }
 
+    // ========== Role Permissions ==========
+
+    public async Task<List<RolePermission>> GetRolePermissionsAsync(string roleName)
+    {
+        var permissions = new List<RolePermission>();
+        try
+        {
+            // Search for the role by display name
+            var url = $"{_baseUrl}/Roles?filter=displayName eq \"{roleName}\"";
+            var response = await _httpClient.GetAsync(url);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("SCIM2 Roles request failed. Status: {StatusCode}", response.StatusCode);
+                return permissions;
+            }
+
+            var content = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(content);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("Resources", out var resources))
+            {
+                foreach (var resource in resources.EnumerateArray())
+                {
+                    if (resource.TryGetProperty("permissions", out var perms))
+                    {
+                        foreach (var perm in perms.EnumerateArray())
+                        {
+                            var value = perm.TryGetProperty("value", out var v) ? v.GetString() : null;
+                            var display = perm.TryGetProperty("display", out var d) ? d.GetString() : null;
+
+                            permissions.Add(new RolePermission
+                            {
+                                RoleName = roleName,
+                                ScopeName = value ?? string.Empty,
+                                Display = display ?? value ?? string.Empty
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching role permissions for role: {RoleName}", roleName);
+        }
+
+        return permissions;
+    }
+
+    public async Task<List<RolePermission>> GetUserRolePermissionsAsync(string wso2UserId)
+    {
+        var allPermissions = new List<RolePermission>();
+        try
+        {
+            // Get user's groups
+            var userUrl = $"{_baseUrl}/Users/{wso2UserId}";
+            var response = await _httpClient.GetAsync(userUrl);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Failed to fetch user {UserId}. Status: {StatusCode}", wso2UserId, response.StatusCode);
+                return allPermissions;
+            }
+
+            var content = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(content);
+            var root = doc.RootElement;
+
+            // Extract groups from the user resource
+            if (root.TryGetProperty("groups", out var groups))
+            {
+                foreach (var group in groups.EnumerateArray())
+                {
+                    var groupDisplay = group.TryGetProperty("display", out var d) ? d.GetString() : null;
+                    if (!string.IsNullOrEmpty(groupDisplay))
+                    {
+                        // Use group name as a role name to look up permissions
+                        var rolePermissions = await GetRolePermissionsAsync(groupDisplay);
+                        allPermissions.AddRange(rolePermissions);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching user role permissions for user: {UserId}", wso2UserId);
+        }
+
+        return allPermissions;
+    }
+
     public async Task ResetPasswordAsync(string userId, string newPassword)
     {
         var patchBody = new

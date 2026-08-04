@@ -4,11 +4,13 @@
 @using Microsoft.AspNetCore.Authentication
 @using ShellMgmt.Domain.MenuItemModels
 @using ShellMgmt.Domain.UserModels
+@using ShellMgmt.Web.Models
 @using ShellMgmt.Web.Services
 @using ShellMgmt.Web.Constants
 @inject IHttpContextAccessor Context
 @inject MenuService MenuService
 @inject ApiService ApiService
+@inject Wso2Service Wso2Service
 @inject IConfiguration Configuration
 @inject ILogger<Home> Logger
 
@@ -74,7 +76,113 @@
             </RadzenStack>
         </RadzenCard>
     </RadzenColumn>
+
+    @* Permission Scopes Card *@
+    <RadzenColumn Size="12" SizeMD="6" SizeLG="4">
+        <RadzenCard class="rz-shadow-2">
+            <RadzenStack Gap="0.75rem">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                    <RadzenIcon Icon="vpn_key" Style="font-size: 40px; color: var(--rz-primary);" />
+                    <RadzenText TextStyle="TextStyle.H5">Permission Scopes</RadzenText>
+                </RadzenStack>
+                <RadzenDivider />
+                @if (tokenScopes != null && tokenScopes.Any())
+                {
+                    <RadzenStack Gap="0.5rem">
+                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                            <RadzenIcon Icon="key" Style="font-size: 20px; color: var(--rz-text-secondary);" />
+                            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary">Access Token Scopes:</RadzenText>
+                        </RadzenStack>
+                        <RadzenStack Orientation="Orientation.Horizontal" Wrap="FlexWrap.Wrap" Gap="0.5rem">
+                            @foreach (var scope in tokenScopes)
+                            {
+                                <RadzenBadge Text="@scope" BadgeStyle="@GetScopeBadgeStyle(scope)" />
+                            }
+                        </RadzenStack>
+                    </RadzenStack>
+                }
+                else
+                {
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                        <RadzenIcon Icon="info" Style="font-size: 20px; color: var(--rz-text-secondary);" />
+                        <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary">No scopes found in access token</RadzenText>
+                    </RadzenStack>
+                }
+
+                @if (rptScopes != null && rptScopes.Any())
+                {
+                    <RadzenDivider />
+                    <RadzenStack Gap="0.5rem">
+                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                            <RadzenIcon Icon="shield" Style="font-size: 20px; color: var(--rz-warning);" />
+                            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary">RBAC Scopes (RPT):</RadzenText>
+                        </RadzenStack>
+                        <RadzenStack Orientation="Orientation.Horizontal" Wrap="FlexWrap.Wrap" Gap="0.5rem">
+                            @foreach (var scope in rptScopes)
+                            {
+                                <RadzenBadge Text="@scope" BadgeStyle="BadgeStyle.Warning" />
+                            }
+                        </RadzenStack>
+                    </RadzenStack>
+                }
+
+                @if (userRolePermissions != null && userRolePermissions.Any())
+                {
+                    <RadzenDivider />
+                    <RadzenStack Gap="0.5rem">
+                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                            <RadzenIcon Icon="admin_panel_settings" Style="font-size: 20px; color: var(--rz-text-secondary);" />
+                            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary">Role-Based Permissions (SCIM2):</RadzenText>
+                        </RadzenStack>
+                        @foreach (var group in userRolePermissions.GroupBy(p => p.RoleName))
+                        {
+                            <RadzenStack Gap="0.25rem">
+                                <RadzenText TextStyle="TextStyle.Caption"><strong>@group.Key</strong></RadzenText>
+                                <RadzenStack Orientation="Orientation.Horizontal" Wrap="FlexWrap.Wrap" Gap="0.25rem">
+                                    @foreach (var perm in group)
+                                    {
+                                        <RadzenBadge Text="@perm.ScopeName" BadgeStyle="BadgeStyle.Info" />
+                                    }
+                                </RadzenStack>
+                            </RadzenStack>
+                        }
+                    </RadzenStack>
+                }
+
+                @if (isLoadingPermissions)
+                {
+                    <RadzenStack AlignItems="AlignItems.Center">
+                        <RadzenProgressBarCircular ProgressBarStyle="ProgressBarStyle.Primary" Value="100" ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                    </RadzenStack>
+                }
+            </RadzenStack>
+        </RadzenCard>
+    </RadzenColumn>
 </RadzenRow>
+
+@* Token Claims Diagnostic *@
+@if (allTokenClaims != null && allTokenClaims.Any())
+{
+    <RadzenRow Gap="1rem" class="rz-p-4">
+        <RadzenColumn Size="12">
+            <RadzenCard class="rz-shadow-2">
+                <RadzenStack Gap="0.75rem">
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                        <RadzenIcon Icon="bug_report" Style="font-size: 24px; color: var(--rz-warning);" />
+                        <RadzenText TextStyle="TextStyle.H6">Access Token Claims (Diagnostic)</RadzenText>
+                    </RadzenStack>
+                    <RadzenDivider />
+                    <RadzenDataGrid Data="@allTokenClaims" TItem="System.Security.Claims.Claim" AllowSorting="true" AllowFiltering="true" AllowPaging="true" PageSize="10">
+                        <Columns>
+                            <RadzenDataGridColumn TItem="System.Security.Claims.Claim" Property="Type" Title="Claim Type" Width="200px" />
+                            <RadzenDataGridColumn TItem="System.Security.Claims.Claim" Property="Value" Title="Value" />
+                        </Columns>
+                    </RadzenDataGrid>
+                </RadzenStack>
+            </RadzenCard>
+        </RadzenColumn>
+    </RadzenRow>
+}
 
 @if (isLoading)
 {
@@ -109,7 +217,12 @@ else
 
 @code {
     private List<MenuItemDto>? userMenuItems;
+    private List<string>? tokenScopes;
+    private List<string>? rptScopes;
+    private List<ShellMgmt.Web.Models.RolePermission>? userRolePermissions;
+    private List<System.Security.Claims.Claim>? allTokenClaims;
     private bool isLoading = true;
+    private bool isLoadingPermissions;
     private string? userDisplayName;
     private string? userId;
     private string? userEmail;
@@ -138,6 +251,101 @@ else
             var accessToken = Context.HttpContext != null
                 ? await Context.HttpContext.GetTokenAsync("access_token")
                 : null;
+
+            // Read scopes from the access token JWT
+            if (!string.IsNullOrEmpty(accessToken))
+            {
+                try
+                {
+                    var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+                    var jwtToken = handler.ReadJwtToken(accessToken);
+                    allTokenClaims = jwtToken.Claims.ToList();
+
+                    var scopeClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == "scope");
+                    if (scopeClaim != null)
+                    {
+                        tokenScopes = scopeClaim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+                    }
+                    else
+                    {
+                        // Some WSO2 versions use space-separated values in a single "scope" claim
+                        var allScopes = jwtToken.Claims
+                            .Where(c => c.Type == "scope")
+                            .SelectMany(c => c.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                            .ToList();
+                        tokenScopes = allScopes.Any() ? allScopes : null;
+                    }
+
+                    Logger.LogInformation("Access token claims: {Claims}",
+                        string.Join(", ", jwtToken.Claims.Select(c => $"{c.Type}={c.Value}")));
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Failed to parse JWT token for scopes");
+                }
+            }
+
+            // Fetch RPT (Requesting Party Token) for RBAC scopes via UMA flow (non-blocking)
+            if (!string.IsNullOrEmpty(accessToken))
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        isLoadingPermissions = true;
+                        await InvokeAsync(StateHasChanged);
+
+                        var rptToken = await Wso2Service.GetRptAsync(accessToken);
+                        if (!string.IsNullOrEmpty(rptToken))
+                        {
+                            var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+                            var rptJwt = handler.ReadJwtToken(rptToken);
+                            var scopeClaim = rptJwt.Claims.FirstOrDefault(c => c.Type == "scope");
+                            if (scopeClaim != null)
+                            {
+                                rptScopes = scopeClaim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+                            }
+                            else
+                            {
+                                rptScopes = rptJwt.Claims
+                                    .Where(c => c.Type == "scope")
+                                    .SelectMany(c => c.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                                    .ToList();
+                                if (!rptScopes.Any()) rptScopes = null;
+                            }
+                        }
+                        await InvokeAsync(StateHasChanged);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogWarning(ex, "Failed to fetch RPT token");
+                    }
+                });
+            }
+
+            // Fetch role-based permissions from WSO2 SCIM2 API (non-blocking)
+            if (!string.IsNullOrEmpty(userId))
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        isLoadingPermissions = true;
+                        await InvokeAsync(StateHasChanged);
+                        userRolePermissions = await Wso2Service.GetUserRolePermissionsAsync(userId);
+                        await InvokeAsync(StateHasChanged);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogWarning(ex, "Failed to fetch role permissions for userId: {UserId}", userId);
+                    }
+                    finally
+                    {
+                        isLoadingPermissions = false;
+                        await InvokeAsync(StateHasChanged);
+                    }
+                });
+            }
 
             // Fetch user profile from API in background (non-blocking)
             if (!string.IsNullOrEmpty(userId) && !string.IsNullOrEmpty(accessToken))
@@ -253,6 +461,23 @@ else
         {
             return null;
         }
+    }
+
+    private static BadgeStyle GetScopeBadgeStyle(string scope)
+    {
+        return scope?.ToLower() switch
+        {
+            "admin" => BadgeStyle.Danger,
+            "write" => BadgeStyle.Warning,
+            "delete" => BadgeStyle.Danger,
+            "read" => BadgeStyle.Success,
+            "openid" => BadgeStyle.Info,
+            "profile" => BadgeStyle.Info,
+            "email" => BadgeStyle.Info,
+            "groups" => BadgeStyle.Secondary,
+            "roles" => BadgeStyle.Secondary,
+            _ => BadgeStyle.Primary
+        };
     }
 
     private static string GetMenuIcon(string? name)
