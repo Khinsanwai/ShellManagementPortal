@@ -73,8 +73,10 @@
                 @a.CreatedDate.ToString("yyyy-MM-dd HH:mm")
             </Template>
         </RadzenDataGridColumn>
-        <RadzenDataGridColumn TItem="AppDto" Title="Actions" Width="150px">
+        <RadzenDataGridColumn TItem="AppDto" Title="Actions" Width="200px">
             <Template Context="a">
+                <RadzenButton Icon="group_add" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Info" Tooltip="Assign Groups"
+                              Click="@(() => NavigationManager.NavigateTo($"/app-groups"))" />
                 <RadzenButton Icon="edit" Size="ButtonSize.Small" Tooltip="Edit" Click="@(() => EditApp(a))" />
                 <RadzenButton Icon="delete" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Danger" Tooltip="Delete"
                               Click="@(() => DeleteApp(a))" />

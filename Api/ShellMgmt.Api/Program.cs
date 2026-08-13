@@ -31,6 +31,7 @@ builder.Services.AddDbContext<ReadDbContext>(options =>
     options.UseSqlServer(config.GetConnectionString("ReadDatabaseConnection")));
 
 builder.Services.AddScoped<ScimService>();
+builder.Services.AddScoped<Wso2ApiResourceService>();
 builder.Services.AddControllers(options =>
 {
     options.Filters.Add<AuditLogFilter>();

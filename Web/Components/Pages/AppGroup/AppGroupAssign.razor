@@ -1,0 +1,236 @@
+@page "/app-groups"
+@attribute [Authorize]
+@inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject NavigationManager NavigationManager
+
+<PageTitle>App Group Assignment - Shell Management Portal</PageTitle>
+
+<RadzenRow class="rz-p-4">
+    <RadzenColumn Size="12">
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                <RadzenButton Icon="arrow_back" ButtonStyle="ButtonStyle.Light" Click="@(() => NavigationManager.NavigateTo("/"))" Tooltip="Return to Dashboard" />
+                <RadzenText TextStyle="TextStyle.H4">App Group Assignment</RadzenText>
+            </RadzenStack>
+        </RadzenStack>
+    </RadzenColumn>
+</RadzenRow>
+
+<RadzenRow Gap="1rem">
+    @* Left Panel: Applications List *@
+    <RadzenColumn Size="6">
+        <RadzenCard>
+            <RadzenText TextStyle="TextStyle.H5" class="rz-mb-3">Applications</RadzenText>
+            <RadzenDataGrid @ref="appGrid" Data="@apps" TItem="AppDto" AllowSorting="true" AllowPaging="true" PageSize="10"
+                            ShowPagingSummary="true" SelectionMode="DataGridSelectionMode.Single" @bind-Value="@selectedApps"
+                            RowSelect="@OnAppSelected">
+                <Columns>
+                    <RadzenDataGridColumn TItem="AppDto" Property="Name" Title="Name" Sortable="true" Width="200px">
+                        <Template Context="a">
+                            <strong>@a.Name</strong>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="AppDto" Property="Code" Title="Code" Sortable="true" Width="120px">
+                        <Template Context="a">
+                            <RadzenBadge Text="@a.Code" BadgeStyle="BadgeStyle.Info" />
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="AppDto" Property="Status" Title="Status" Sortable="true" Width="100px">
+                        <Template Context="a">
+                            @if (a.Status)
+                            {
+                                <RadzenBadge Text="Active" BadgeStyle="BadgeStyle.Success" />
+                            }
+                            else
+                            {
+                                <RadzenBadge Text="Inactive" BadgeStyle="BadgeStyle.Danger" />
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        </RadzenCard>
+    </RadzenColumn>
+
+    @* Right Panel: Group Assignments *@
+    <RadzenColumn Size="6">
+        <RadzenCard>
+            @if (selectedApp != null)
+            {
+                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" class="rz-mb-3">
+                    <RadzenText TextStyle="TextStyle.H5">
+                        Groups for <strong>@selectedApp.Name</strong>
+                    </RadzenText>
+                    <RadzenButton Text="Save Changes" Icon="save" ButtonStyle="ButtonStyle.Primary"
+                                  Click="@SaveAssignments" Disabled="@isSaving" Busy="@isSaving" />
+                </RadzenStack>
+
+                @if (isLoadingGroups)
+                {
+                    <RadzenProgressBarCircular ProgressBarStyle="ProgressBarStyle.Primary" Value="100" ShowValue="false" Mode="ProgressBarMode.Indeterminate" />
+                }
+                else if (availableGroups != null && availableGroups.Count > 0)
+                {
+                    <RadzenStack Gap="0.75rem">
+                        @foreach (var group in availableGroups)
+                        {
+                            <RadzenCard Variant="Variant.Outlined" class="rz-p-3">
+                                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                                    <RadzenCheckBox @bind-Value="group.IsAssigned" />
+                                    <RadzenStack Gap="0">
+                                        <RadzenText TextStyle="TextStyle.Subtitle1"><strong>@group.GroupName</strong></RadzenText>
+                                    </RadzenStack>
+                                </RadzenStack>
+                            </RadzenCard>
+                        }
+                    </RadzenStack>
+                }
+                else
+                {
+                    <RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary">No groups available.</RadzenText>
+                }
+            }
+            else
+            {
+                <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="min-height: 300px;">
+                    <RadzenIcon Icon="apps" Style="font-size: 48px; color: var(--rz-text-disabled-color);" />
+                    <RadzenText TextStyle="TextStyle.H6" class="rz-text-secondary">Select an application to manage group assignments</RadzenText>
+                </RadzenStack>
+            }
+        </RadzenCard>
+    </RadzenColumn>
+</RadzenRow>
+
+@code {
+    RadzenDataGrid<AppDto>? appGrid;
+    List<AppDto>? apps;
+    IList<AppDto>? selectedApps;
+    AppDto? selectedApp;
+
+    List<AppGroupItem>? availableGroups;
+    bool isLoadingGroups;
+    bool isSaving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadApps();
+    }
+
+    private async Task LoadApps()
+    {
+        try
+        {
+            var result = await ApiService.GetAsync<AppListResponse>("app/get", AppConfig.AccessToken);
+            apps = result?.Items;
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load applications: {ex.Message}");
+        }
+    }
+
+    private async Task OnAppSelected(AppDto app)
+    {
+        selectedApp = app;
+        await LoadGroupAssignments();
+    }
+
+    private async Task LoadGroupAssignments()
+    {
+        if (selectedApp == null) return;
+
+        isLoadingGroups = true;
+        StateHasChanged();
+
+        try
+        {
+            // Load all groups from WSO2
+            var groupsResult = await ApiService.GetAsync<GroupListResponse>("group/get?pageSize=100", AppConfig.AccessToken);
+            var allGroups = groupsResult?.Items ?? new List<GroupDto>();
+
+            // Load existing assignments for this app
+            var assignments = await ApiService.GetAsync<List<AppGroupAssignmentDto>>(
+                $"appgroup/GetAppGroups/{selectedApp.Id}", AppConfig.AccessToken);
+
+            var assignedGroupIds = assignments?
+                .Select(a => a.Wso2GroupId)
+                .ToHashSet() ?? new HashSet<string>();
+
+            availableGroups = allGroups.Select(g => new AppGroupItem
+            {
+                GroupId = g.Id,
+                GroupName = g.DisplayName,
+                IsAssigned = assignedGroupIds.Contains(g.Id)
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load group assignments: {ex.Message}");
+            availableGroups = new List<AppGroupItem>();
+        }
+        finally
+        {
+            isLoadingGroups = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveAssignments()
+    {
+        if (selectedApp == null || availableGroups == null) return;
+
+        isSaving = true;
+        StateHasChanged();
+
+        try
+        {
+            var selectedGroups = availableGroups
+                .Where(g => g.IsAssigned)
+                .Select(g => new { groupId = g.GroupId, groupName = g.GroupName })
+                .ToList();
+
+            await ApiService.PostAsync($"appgroup/SyncAppGroups/{selectedApp.Id}",
+                new { groups = selectedGroups }, AppConfig.AccessToken);
+
+            NotificationService.Notify(NotificationSeverity.Success, "Saved",
+                $"Group assignments updated for {selectedApp.Name}");
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to save assignments: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    public class AppGroupItem
+    {
+        public string GroupId { get; set; } = string.Empty;
+        public string GroupName { get; set; } = string.Empty;
+        public bool IsAssigned { get; set; }
+    }
+
+    public class AppListResponse
+    {
+        public List<AppDto> Items { get; set; } = new();
+        public int Total { get; set; }
+    }
+
+    public class GroupListResponse
+    {
+        public List<GroupDto> Items { get; set; } = new();
+        public int Total { get; set; }
+    }
+
+    public class AppGroupAssignmentDto
+    {
+        public Guid Id { get; set; }
+        public int ApplicationId { get; set; }
+        public string Wso2GroupId { get; set; } = string.Empty;
+        public string Wso2GroupName { get; set; } = string.Empty;
+    }
+}

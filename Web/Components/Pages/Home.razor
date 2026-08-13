@@ -261,19 +261,47 @@ else
                     var jwtToken = handler.ReadJwtToken(accessToken);
                     allTokenClaims = jwtToken.Claims.ToList();
 
+                    Logger.LogInformation("=== TOKEN CLAIMS DEBUG ===");
+                    foreach (var claim in jwtToken.Claims)
+                    {
+                        Logger.LogInformation("Claim Type: {Type}, Value: {Value}", claim.Type, claim.Value);
+                    }
+
+                    // Try multiple scope claim formats used by WSO2
                     var scopeClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == "scope");
                     if (scopeClaim != null)
                     {
                         tokenScopes = scopeClaim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+                        Logger.LogInformation("Found scopes in 'scope' claim: {Scopes}", string.Join(", ", tokenScopes));
                     }
                     else
                     {
-                        // Some WSO2 versions use space-separated values in a single "scope" claim
-                        var allScopes = jwtToken.Claims
-                            .Where(c => c.Type == "scope")
-                            .SelectMany(c => c.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-                            .ToList();
-                        tokenScopes = allScopes.Any() ? allScopes : null;
+                        // WSO2 IS 7.x may use different claim names
+                        var possibleScopeClaims = new[] { "scope", "scopes", "permissions", "scp" };
+                        foreach (var claimName in possibleScopeClaims)
+                        {
+                            var claim = jwtToken.Claims.FirstOrDefault(c => c.Type == claimName);
+                            if (claim != null)
+                            {
+                                tokenScopes = claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+                                Logger.LogInformation("Found scopes in '{ClaimName}' claim: {Scopes}", claimName, string.Join(", ", tokenScopes));
+                                break;
+                            }
+                        }
+
+                        if (tokenScopes == null)
+                        {
+                            // Try looking for individual scope claims (WSO2 sometimes adds them separately)
+                            var individualScopes = jwtToken.Claims
+                                .Where(c => c.Type.StartsWith("scope") || c.Type.Contains("scope"))
+                                .Select(c => c.Value)
+                                .ToList();
+                            if (individualScopes.Any())
+                            {
+                                tokenScopes = individualScopes;
+                                Logger.LogInformation("Found individual scope claims: {Scopes}", string.Join(", ", tokenScopes));
+                            }
+                        }
                     }
 
                     Logger.LogInformation("Access token claims: {Claims}",
@@ -507,6 +535,7 @@ else
             "audit logs" => "history",
             "audit dashboard" => "dashboard",
             "user menu assignment" => "assignment",
+            "api resources" => "api",
             _ => "folder"
         };
     }

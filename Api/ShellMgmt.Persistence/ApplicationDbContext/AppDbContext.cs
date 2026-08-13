@@ -22,6 +22,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<UserMenuAssignment> UserMenuAssignment { get; set; }
     public DbSet<Userlog> Userlog { get; set; }
     public DbSet<UserChildApplicationAssignment> UserChildApplicationAssignment { get; set; }
+    public DbSet<AppGroupAssignment> AppGroupAssignment { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -35,6 +36,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<UserMenuAssignment>().ToTable("UserMenuAssignment", "appshell");
         modelBuilder.Entity<Userlog>().ToTable("Userlogs", "appshell");
         modelBuilder.Entity<UserChildApplicationAssignment>().ToTable("UserChildApplicationAssignment", "appshell");
+        modelBuilder.Entity<AppGroupAssignment>().ToTable("AppGroupAssignment", "appshell");
 
         modelBuilder.Entity<UserMenuAssignment>()
             .HasOne(ua => ua.MenuItem)
@@ -45,6 +47,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .HasOne(ua => ua.Application)
             .WithMany()
             .HasForeignKey(ua => ua.ApplicationId);
+
+        modelBuilder.Entity<AppGroupAssignment>()
+            .HasOne(ag => ag.Application)
+            .WithMany()
+            .HasForeignKey(ag => ag.ApplicationId);
 
         modelBuilder.Entity<App>()
             .Property(a => a.DisplayOrder)

@@ -1,0 +1,257 @@
+@using ShellMgmt.Domain.ApiResourceModels
+@using Microsoft.Extensions.Configuration
+@inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject DialogService DialogService
+@inject IConfiguration Configuration
+
+<RadzenTemplateForm Data="@model" TItem="ApiResourceFormModel" Submit="@OnSubmit">
+    <RadzenStack Gap="1rem">
+        <RadzenRow Gap="1rem">
+            <RadzenColumn Size="6">
+                <RadzenFormField Text="Name" Style="width: 100%;">
+                    <RadzenTextBox @bind-Value="model.Name" Name="Name" Style="width: 100%;" Disabled="@IsViewOnly" />
+                    <RadzenRequiredValidator Component="Name" Text="Name is required" />
+                </RadzenFormField>
+            </RadzenColumn>
+            <RadzenColumn Size="6">
+                <RadzenFormField Text="Identifier" Style="width: 100%;">
+                    <RadzenTextBox @bind-Value="model.Identifier" Name="Identifier" Style="width: 100%;" Disabled="@IsViewOnly" />
+                    <RadzenRequiredValidator Component="Identifier" Text="Identifier is required" />
+                </RadzenFormField>
+            </RadzenColumn>
+        </RadzenRow>
+
+        <RadzenFormField Text="Description" Style="width: 100%;">
+            <RadzenTextArea @bind-Value="model.Description" Name="Description" Rows="3" Style="width: 100%;" Disabled="@IsViewOnly" />
+        </RadzenFormField>
+
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+            <RadzenCheckBox @bind-Value="model.RequiresAuthorization" Name="RequiresAuthorization" Disabled="@IsViewOnly" />
+            <RadzenLabel Text="Requires Authorization" Component="RequiresAuthorization" />
+        </RadzenStack>
+
+        <!-- Scopes Section -->
+        <RadzenFieldset Text="Scopes">
+            <RadzenStack Gap="0.5rem">
+                @if (!IsViewOnly)
+                {
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                        <RadzenButton Text="Add Scope" Icon="add" ButtonStyle="ButtonStyle.Success" Size="ButtonSize.Small"
+                                      Click="@AddScope" />
+                        <RadzenButton Text="Load from Config" Icon="download" ButtonStyle="ButtonStyle.Info" Size="ButtonSize.Small"
+                                      Click="@LoadScopesFromConfig" />
+                    </RadzenStack>
+                }
+
+                @if (model.Scopes.Any())
+                {
+                    <RadzenDataGrid Data="@model.Scopes" TItem="ScopeFormModel" AllowSorting="false" AllowPaging="false"
+                                    ShowPagingSummary="false">
+                        <Columns>
+                            <RadzenDataGridColumn TItem="ScopeFormModel" Property="Name" Title="Scope Name" Width="200px">
+                                <Template Context="s">
+                                    @if (IsViewOnly)
+                                    {
+                                        <RadzenBadge Text="@s.Name" BadgeStyle="BadgeStyle.Info" />
+                                    }
+                                    else
+                                    {
+                                        <RadzenTextBox @bind-Value="s.Name" Style="width: 100%;" Placeholder="e.g., READ, WRITE" />
+                                    }
+                                </Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="ScopeFormModel" Property="DisplayName" Title="Display Name" Width="200px">
+                                <Template Context="s">
+                                    @if (IsViewOnly)
+                                    {
+                                        @(s.DisplayName ?? s.Name)
+                                    }
+                                    else
+                                    {
+                                        <RadzenTextBox @bind-Value="s.DisplayName" Style="width: 100%;" Placeholder="e.g., Read Access" />
+                                    }
+                                </Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="ScopeFormModel" Property="Description" Title="Description">
+                                <Template Context="s">
+                                    @if (IsViewOnly)
+                                    {
+                                        @(s.Description ?? "—")
+                                    }
+                                    else
+                                    {
+                                        <RadzenTextBox @bind-Value="s.Description" Style="width: 100%;" Placeholder="Optional description" />
+                                    }
+                                </Template>
+                            </RadzenDataGridColumn>
+                            @if (!IsViewOnly)
+                            {
+                                <RadzenDataGridColumn TItem="ScopeFormModel" Title="Actions" Width="80px">
+                                    <Template Context="s">
+                                        <RadzenButton Icon="delete" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Danger"
+                                                      Click="@(() => RemoveScope(s))" />
+                                    </Template>
+                                </RadzenDataGridColumn>
+                            }
+                        </Columns>
+                    </RadzenDataGrid>
+                }
+                else
+                {
+                    <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary">No scopes defined. Add scopes to define what permissions this API resource provides.</RadzenText>
+                }
+            </RadzenStack>
+        </RadzenFieldset>
+
+        @if (!IsViewOnly)
+        {
+            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem">
+                <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Light" Click="@(() => DialogService.Close(false))" />
+                <RadzenButton Text="Save" ButtonType="ButtonType.Submit" ButtonStyle="ButtonStyle.Primary" />
+            </RadzenStack>
+        }
+        else
+        {
+            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem">
+                <RadzenButton Text="Close" ButtonStyle="ButtonStyle.Light" Click="@(() => DialogService.Close(false))" />
+            </RadzenStack>
+        }
+    </RadzenStack>
+</RadzenTemplateForm>
+
+@code {
+    [Parameter] public bool IsEdit { get; set; }
+    [Parameter] public string? ApiResourceId { get; set; }
+    [Parameter] public bool IsViewOnly { get; set; }
+
+    private ApiResourceFormModel model = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if ((IsEdit || IsViewOnly) && !string.IsNullOrEmpty(ApiResourceId))
+        {
+            try
+            {
+                var resource = await ApiService.GetAsync<ApiResourceDto>($"ApiResource/GetById/{ApiResourceId}", AppConfig.AccessToken);
+                if (resource != null)
+                {
+                    model = new ApiResourceFormModel
+                    {
+                        Name = resource.Name ?? string.Empty,
+                        Identifier = resource.Identifier ?? string.Empty,
+                        Description = resource.Description,
+                        RequiresAuthorization = resource.RequiresAuthorization,
+                        Scopes = resource.Scopes.Select(s => new ScopeFormModel
+                        {
+                            Name = s.Name,
+                            DisplayName = s.DisplayName,
+                            Description = s.Description
+                        }).ToList()
+                    };
+                }
+            }
+            catch (Exception ex)
+            {
+                NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load API resource: {ex.Message}");
+            }
+        }
+    }
+
+    private void AddScope()
+    {
+        model.Scopes.Add(new ScopeFormModel());
+    }
+
+    private void LoadScopesFromConfig()
+    {
+        var configScopes = Configuration.GetSection("WSO2:ApiResourceScopes").Get<string[]>();
+        if (configScopes != null && configScopes.Any())
+        {
+            model.Scopes.Clear();
+            foreach (var scope in configScopes)
+            {
+                model.Scopes.Add(new ScopeFormModel
+                {
+                    Name = scope,
+                    DisplayName = scope.Replace(":", " - "),
+                    Description = $"Auto-loaded from configuration"
+                });
+            }
+            NotificationService.Notify(NotificationSeverity.Info, "Loaded", $"Loaded {configScopes.Length} scopes from configuration");
+        }
+        else
+        {
+            NotificationService.Notify(NotificationSeverity.Warning, "No Scopes", "No scopes found in WSO2:ApiResourceScopes configuration");
+        }
+    }
+
+    private void RemoveScope(ScopeFormModel scope)
+    {
+        model.Scopes.Remove(scope);
+    }
+
+    private async Task OnSubmit(ApiResourceFormModel form)
+    {
+        try
+        {
+            // Validate scopes
+            foreach (var scope in form.Scopes)
+            {
+                if (string.IsNullOrWhiteSpace(scope.Name))
+                {
+                    NotificationService.Notify(NotificationSeverity.Warning, "Validation", "All scopes must have a name.");
+                    return;
+                }
+            }
+
+            var apiResource = new ApiResourceDto
+            {
+                Name = form.Name,
+                Identifier = form.Identifier,
+                Description = form.Description,
+                RequiresAuthorization = form.RequiresAuthorization,
+                Scopes = form.Scopes.Select(s => new ApiResourceScopeDto
+                {
+                    Name = s.Name,
+                    DisplayName = s.DisplayName ?? s.Name,
+                    Description = s.Description
+                }).ToList()
+            };
+
+            if (IsEdit && !string.IsNullOrEmpty(ApiResourceId))
+            {
+                apiResource.Id = ApiResourceId;
+                await ApiService.PutAsync("ApiResource/Update", apiResource, AppConfig.AccessToken);
+                NotificationService.Notify(NotificationSeverity.Success, "Updated", "API resource updated successfully");
+            }
+            else
+            {
+                await ApiService.PostAsync("ApiResource/Create", apiResource, AppConfig.AccessToken);
+                NotificationService.Notify(NotificationSeverity.Success, "Created", "API resource created successfully");
+            }
+
+            DialogService.Close(true);
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", ex.Message);
+        }
+    }
+
+    private class ApiResourceFormModel
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Identifier { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public bool RequiresAuthorization { get; set; }
+        public List<ScopeFormModel> Scopes { get; set; } = new();
+    }
+
+    private class ScopeFormModel
+    {
+        public string Name { get; set; } = string.Empty;
+        public string? DisplayName { get; set; }
+        public string? Description { get; set; }
+    }
+}

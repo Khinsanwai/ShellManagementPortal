@@ -25,7 +25,8 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient<Wso2Service>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {
-        ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+        ServerCertificateCustomValidationCallback = (_, _, _, _) => true,
+        AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
     });
 
 builder.Services.AddScoped<MenuService>();
@@ -118,6 +119,11 @@ builder.Services.AddAuthentication(options =>
         {
             options.Scope.Add(scope);
         }
+        Console.WriteLine($"[DEBUG] Requesting API resource scopes: {string.Join(", ", apiResourceScopes)}");
+    }
+    else
+    {
+        Console.WriteLine("[DEBUG] No API resource scopes configured");
     }
 
     options.Events = new OpenIdConnectEvents
