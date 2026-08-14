@@ -9,5 +9,5 @@ public sealed record GetAppQuery(
     int Skip = 1,
     string? SortBy = null,
     string? OrderBy = null,
-    Guid? Id = null,
+    int? Id = null,
     string? Name = null) : IRequest<PagedList<AppDto>>;

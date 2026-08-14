@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Asp.Versioning;
 using Microsoft.OpenApi.Models;
+using ShellMgmt.Api.Filters;
 using ShellMgmt.Api.Services;
 
 var logger = Log.Logger = new LoggerConfiguration()
@@ -30,7 +31,11 @@ builder.Services.AddDbContext<ReadDbContext>(options =>
     options.UseSqlServer(config.GetConnectionString("ReadDatabaseConnection")));
 
 builder.Services.AddScoped<ScimService>();
-builder.Services.AddControllers();
+builder.Services.AddScoped<Wso2ApiResourceService>();
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add<AuditLogFilter>();
+});
 
 // WSO2 JWT Bearer Authentication
 builder.Services.AddAuthentication(options =>

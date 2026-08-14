@@ -25,13 +25,15 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient<Wso2Service>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {
-        ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+        ServerCertificateCustomValidationCallback = (_, _, _, _) => true,
+        AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
     });
 
 builder.Services.AddScoped<MenuService>();
 builder.Services.AddScoped<TenantService>();
 builder.Services.AddScoped<ResourceService>();
 builder.Services.AddScoped<ApiService>();
+builder.Services.AddSingleton<AuditLogService>();
 builder.Services.AddCascadingAuthenticationState();
 
 // WSO2 OIDC Authentication
@@ -90,7 +92,7 @@ builder.Services.AddAuthentication(options =>
 
     options.MapInboundClaims = false;
     options.TokenValidationParameters.NameClaimType = JwtRegisteredClaimNames.Name;
-    options.TokenValidationParameters.RoleClaimType = "groups";
+    options.TokenValidationParameters.RoleClaimType = "roles";
 
     options.SaveTokens = true;
     options.GetClaimsFromUserInfoEndpoint = true;
@@ -109,12 +111,54 @@ builder.Services.AddAuthentication(options =>
     options.Scope.Add("groups");
     options.Scope.Add("roles");
 
+    // Add custom API resource scopes from configuration
+    var apiResourceScopes = wso2Settings.GetSection("ApiResourceScopes").Get<string[]>();
+    if (apiResourceScopes != null)
+    {
+        foreach (var scope in apiResourceScopes)
+        {
+            options.Scope.Add(scope);
+        }
+        Console.WriteLine($"[DEBUG] Requesting API resource scopes: {string.Join(", ", apiResourceScopes)}");
+    }
+    else
+    {
+        Console.WriteLine("[DEBUG] No API resource scopes configured");
+    }
+
     options.Events = new OpenIdConnectEvents
     {
         OnRedirectToIdentityProvider = context =>
         {
             context.ProtocolMessage.RedirectUri = wso2Settings["RedirectUri"];
             return Task.CompletedTask;
+        },
+        OnTokenValidated = async context =>
+        {
+            var auditLog = context.HttpContext.RequestServices.GetRequiredService<AuditLogService>();
+            var userId = context.Principal?.FindFirst("sub")?.Value;
+            var username = context.Principal?.Identity?.Name
+                ?? context.Principal?.FindFirst("preferred_username")?.Value
+                ?? userId;
+            var ip = context.HttpContext.Connection.RemoteIpAddress?.ToString();
+            var userAgent = context.HttpContext.Request.Headers.UserAgent.ToString();
+
+            await auditLog.LogAsync(userId, username, "Login", "Login", "Success",
+                description: $"User {username} logged in successfully",
+                ipAddress: ip, userAgent: userAgent);
+        },
+        OnAuthenticationFailed = async context =>
+        {
+            var auditLog = context.HttpContext.RequestServices.GetRequiredService<AuditLogService>();
+            var ip = context.HttpContext.Connection.RemoteIpAddress?.ToString();
+            var userAgent = context.HttpContext.Request.Headers.UserAgent.ToString();
+
+            await auditLog.LogAsync(null, null, "Login", "Login", "Failed",
+                description: $"Authentication failed: {context.Exception?.Message}",
+                ipAddress: ip, userAgent: userAgent);
+
+            context.HandleResponse();
+            context.Response.Redirect("/Account/Login");
         }
     };
 });

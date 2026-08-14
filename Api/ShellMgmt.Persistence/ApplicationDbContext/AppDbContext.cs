@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using ShellMgmt.Domain.AppModels;
 using ShellMgmt.Domain.ClaimModels;
+using ShellMgmt.Domain.UserlogModels;
 using ShellMgmt.Domain.InstitutionModels;
 using ShellMgmt.Domain.MenuItemModels;
 using ShellMgmt.Domain.OrgUnitModels;
@@ -19,6 +20,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<OrgUnit> OrgUnit { get; set; }
     public DbSet<App> App { get; set; }
     public DbSet<UserMenuAssignment> UserMenuAssignment { get; set; }
+    public DbSet<Userlog> Userlog { get; set; }
+    public DbSet<UserChildApplicationAssignment> UserChildApplicationAssignment { get; set; }
+    public DbSet<AppGroupAssignment> AppGroupAssignment { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -28,12 +32,33 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<Claim>().ToTable("Claim", "appshell");
         modelBuilder.Entity<Institution>().ToTable("Institution", "appshell");
         modelBuilder.Entity<OrgUnit>().ToTable("OrgUnit", "appshell");
-        modelBuilder.Entity<App>().ToTable("App", "appshell");
+        modelBuilder.Entity<App>().ToTable("Applications", "appshell");
         modelBuilder.Entity<UserMenuAssignment>().ToTable("UserMenuAssignment", "appshell");
+        modelBuilder.Entity<Userlog>().ToTable("Userlogs", "appshell");
+        modelBuilder.Entity<UserChildApplicationAssignment>().ToTable("UserChildApplicationAssignment", "appshell");
+        modelBuilder.Entity<AppGroupAssignment>().ToTable("AppGroupAssignment", "appshell");
 
         modelBuilder.Entity<UserMenuAssignment>()
             .HasOne(ua => ua.MenuItem)
             .WithMany()
             .HasForeignKey(ua => ua.MenuItemId);
+
+        modelBuilder.Entity<UserChildApplicationAssignment>()
+            .HasOne(ua => ua.Application)
+            .WithMany()
+            .HasForeignKey(ua => ua.ApplicationId);
+
+        modelBuilder.Entity<AppGroupAssignment>()
+            .HasOne(ag => ag.Application)
+            .WithMany()
+            .HasForeignKey(ag => ag.ApplicationId);
+
+        modelBuilder.Entity<App>()
+            .Property(a => a.DisplayOrder)
+            .HasDefaultValue(0);
+
+        modelBuilder.Entity<App>()
+            .Property(a => a.IsVisible)
+            .HasDefaultValue(true);
     }
 }

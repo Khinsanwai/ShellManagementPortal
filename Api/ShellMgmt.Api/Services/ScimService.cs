@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -18,7 +19,8 @@ public class ScimService
 
         var handler = new HttpClientHandler
         {
-            ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+            ServerCertificateCustomValidationCallback = (_, _, _, _) => true,
+            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
         };
         _httpClient = new HttpClient(handler);
         _httpClient.Timeout = TimeSpan.FromSeconds(30);
@@ -344,6 +346,367 @@ public class ScimService
                 }
             }
         }
+    }
+
+    // ========== Role Management (WSO2 SCIM2 Roles) ==========
+
+    public async Task<List<RoleDto>> GetRolesAsync(int startIndex = 1, int count = 100)
+    {
+        var url = $"{_baseUrl}/Roles?startIndex={startIndex}&count={count}";
+        var response = await _httpClient.GetAsync(url);
+        response.EnsureSuccessStatusCode();
+        var content = await response.Content.ReadAsStringAsync();
+        var scimResponse = JsonSerializer.Deserialize<ScimRoleListResponse>(content, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var roles = scimResponse?.Resources ?? new();
+
+        // WSO2 IS 7.x: list endpoint doesn't return members/users — fetch each role individually
+        var result = new List<RoleDto>();
+        foreach (var role in roles)
+        {
+            var fullRole = await GetRoleAsync(role.Id);
+            result.Add(fullRole ?? MapToRoleDto(role));
+        }
+        return result;
+    }
+
+    public async Task<RoleDto?> GetRoleAsync(string roleId)
+    {
+        var url = $"{_baseUrl}/Roles/{roleId}";
+        var response = await _httpClient.GetAsync(url);
+        if (!response.IsSuccessStatusCode) return null;
+        var content = await response.Content.ReadAsStringAsync();
+        var scimRole = JsonSerializer.Deserialize<ScimRoleResource>(content, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        return scimRole != null ? MapToRoleDto(scimRole) : null;
+    }
+
+    public async Task<RoleDto> CreateRoleAsync(string displayName)
+    {
+        var body = new
+        {
+            schemas = new[] { "urn:ietf:params:scim:schemas:core:2.0:Role" },
+            displayName
+        };
+        var json = JsonSerializer.Serialize(body);
+        var content = new StringContent(json, Encoding.UTF8, "application/scim+json");
+        var response = await _httpClient.PostAsync($"{_baseUrl}/Roles", content);
+        var responseBody = await response.Content.ReadAsStringAsync();
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = JsonSerializer.Deserialize<ScimError>(responseBody);
+            throw new Exception($"SCIM create role failed: {error?.Detail ?? responseBody}");
+        }
+        var created = JsonSerializer.Deserialize<ScimRoleResource>(responseBody, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        return MapToRoleDto(created ?? throw new Exception("Failed to parse SCIM role response"));
+    }
+
+    public async Task<RoleDto> UpdateRoleAsync(string roleId, string displayName)
+    {
+        var patchBody = new
+        {
+            schemas = new[] { "urn:ietf:params:scim:api:messages:2.0:PatchOp" },
+            Operations = new[]
+            {
+                new
+                {
+                    op = "replace",
+                    value = new { displayName }
+                }
+            }
+        };
+        var json = JsonSerializer.Serialize(patchBody);
+        var content = new StringContent(json, Encoding.UTF8, "application/scim+json");
+        var request = new HttpRequestMessage(HttpMethod.Patch, $"{_baseUrl}/Roles/{roleId}") { Content = content };
+        var response = await _httpClient.SendAsync(request);
+        var responseBody = await response.Content.ReadAsStringAsync();
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = JsonSerializer.Deserialize<ScimError>(responseBody);
+            throw new Exception($"SCIM update role failed: {error?.Detail ?? responseBody}");
+        }
+        var updated = JsonSerializer.Deserialize<ScimRoleResource>(responseBody, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        return MapToRoleDto(updated ?? throw new Exception("Failed to parse SCIM role response"));
+    }
+
+    public async Task<bool> DeleteRoleAsync(string roleId)
+    {
+        var response = await _httpClient.DeleteAsync($"{_baseUrl}/Roles/{roleId}");
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task AssignGroupToRoleAsync(string roleId, string groupId, string groupName)
+    {
+        // WSO2 IS 7.x: Role-group assignment is done by patching the GROUP (not the role).
+        // Roles are added to groups via: PATCH /Groups/{groupId} with op "add" and value.roles
+        var patchBody = new
+        {
+            schemas = new[] { "urn:ietf:params:scim:api:messages:2.0:PatchOp" },
+            Operations = new[]
+            {
+                new
+                {
+                    op = "add",
+                    value = new
+                    {
+                        roles = new[]
+                        {
+                            new { value = roleId }
+                        }
+                    }
+                }
+            }
+        };
+
+        var json = JsonSerializer.Serialize(patchBody);
+        _logger.LogInformation("AssignGroupToRole PATCH Group {GroupId} with role {RoleId}: {Body}", groupId, roleId, json);
+        var content = new StringContent(json, Encoding.UTF8, "application/scim+json");
+        var request = new HttpRequestMessage(HttpMethod.Patch, $"{_baseUrl}/Groups/{groupId}") { Content = content };
+        var response = await _httpClient.SendAsync(request);
+        var responseBody = await response.Content.ReadAsStringAsync();
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogError("AssignGroupToRole failed. Status: {Status}, Body: {Body}", response.StatusCode, responseBody);
+            var error = JsonSerializer.Deserialize<ScimError>(responseBody);
+            throw new Exception($"SCIM assign group to role failed: {error?.Detail ?? responseBody}");
+        }
+    }
+
+    public async Task RemoveGroupFromRoleAsync(string roleId, string groupId)
+    {
+        // WSO2 IS 7.x: Remove role from group by patching the GROUP endpoint.
+        var patchBody = new
+        {
+            schemas = new[] { "urn:ietf:params:scim:api:messages:2.0:PatchOp" },
+            Operations = new[]
+            {
+                new
+                {
+                    op = "remove",
+                    path = $"roles[value eq \"{roleId}\"]"
+                }
+            }
+        };
+
+        var json = JsonSerializer.Serialize(patchBody);
+        _logger.LogInformation("RemoveGroupFromRole PATCH Group {GroupId} remove role {RoleId}: {Body}", groupId, roleId, json);
+        var content = new StringContent(json, Encoding.UTF8, "application/scim+json");
+        var request = new HttpRequestMessage(HttpMethod.Patch, $"{_baseUrl}/Groups/{groupId}") { Content = content };
+        var response = await _httpClient.SendAsync(request);
+        var responseBody = await response.Content.ReadAsStringAsync();
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogError("RemoveGroupFromRole failed. Status: {Status}, Body: {Body}", response.StatusCode, responseBody);
+            var error = JsonSerializer.Deserialize<ScimError>(responseBody);
+            throw new Exception($"SCIM remove group from role failed: {error?.Detail ?? responseBody}");
+        }
+    }
+
+    public async Task SyncRoleGroupsAsync(string roleId, List<string> targetGroupIds)
+    {
+        // WSO2 IS 7.x: Role-group mapping is stored on the Group resource, not the Role.
+        // We must query all groups, check which ones have this role, and patch accordingly.
+        var role = await GetRoleAsync(roleId)
+            ?? throw new Exception($"Role {roleId} not found");
+
+        var allGroups = await GetGroupsAsync();
+
+        // Find groups that currently have this role assigned
+        var currentAssignedGroupIds = new List<string>();
+        foreach (var group in allGroups)
+        {
+            // Need to fetch full group details to see roles
+            var fullGroup = await GetGroupAsync(group.Id);
+            if (fullGroup != null)
+            {
+                // Check if this group has the role by looking at group's roles
+                var groupRoles = await GetGroupRolesAsync(group.Id);
+                if (groupRoles.Contains(roleId))
+                {
+                    currentAssignedGroupIds.Add(group.Id);
+                }
+            }
+        }
+
+        // Add role to groups that should have it but don't
+        foreach (var groupId in targetGroupIds)
+        {
+            if (!currentAssignedGroupIds.Contains(groupId))
+            {
+                var group = allGroups.FirstOrDefault(g => g.Id == groupId);
+                var groupName = group?.DisplayName ?? groupId;
+                await AssignGroupToRoleAsync(roleId, groupId, groupName);
+                _logger.LogInformation("Assigned group {GroupId} to role {RoleId}", groupId, roleId);
+            }
+        }
+
+        // Remove role from groups that shouldn't have it
+        foreach (var groupId in currentAssignedGroupIds)
+        {
+            if (!targetGroupIds.Contains(groupId))
+            {
+                await RemoveGroupFromRoleAsync(roleId, groupId);
+                _logger.LogInformation("Removed group {GroupId} from role {RoleId}", groupId, roleId);
+            }
+        }
+    }
+
+    public async Task<List<string>> GetGroupIdsForRoleAsync(string roleId)
+    {
+        // WSO2 IS 7.x: find which groups have this role assigned
+        var allGroups = await GetGroupsAsync();
+        var assignedGroupIds = new List<string>();
+
+        foreach (var group in allGroups)
+        {
+            var roleIds = await GetGroupRolesAsync(group.Id);
+            if (roleIds.Contains(roleId))
+            {
+                assignedGroupIds.Add(group.Id);
+            }
+        }
+        return assignedGroupIds;
+    }
+
+    private async Task<List<string>> GetGroupRolesAsync(string groupId)
+    {
+        // Fetch the full group resource and extract role IDs
+        var url = $"{_baseUrl}/Groups/{groupId}";
+        var response = await _httpClient.GetAsync(url);
+        if (!response.IsSuccessStatusCode) return new();
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(content);
+        var root = doc.RootElement;
+
+        var roleIds = new List<string>();
+        if (root.TryGetProperty("roles", out var roles))
+        {
+            foreach (var role in roles.EnumerateArray())
+            {
+                if (role.TryGetProperty("value", out var value))
+                {
+                    roleIds.Add(value.GetString() ?? "");
+                }
+            }
+        }
+        return roleIds;
+    }
+
+    public async Task SyncUserRoleAssignmentsAsync(string userId, string userName, List<string> targetRoleIds)
+    {
+        // WSO2 architecture: User → Group → Role
+        // User-role assignment is done indirectly via group assignment
+        // This method is kept for API compatibility but delegates to group-based flow
+        _logger.LogInformation("SyncUserRoleAssignments called for user {UserId} — WSO2 uses group-based role assignment", userId);
+        await Task.CompletedTask;
+    }
+
+    private static RoleDto MapToRoleDto(ScimRoleResource role)
+    {
+        // WSO2 IS 7.x returns "users" on individual fetch, older versions use "members"
+        var memberList = role.Members ?? role.Users;
+
+        return new RoleDto
+        {
+            Id = role.Id,
+            DisplayName = role.DisplayName,
+            MemberIds = memberList?.Select(m => m.Value).ToList() ?? new(),
+            MemberDisplayNames = memberList?.Select(m => m.Display).ToList() ?? new(),
+            CreatedDate = role.Meta?.Created ?? DateTime.MinValue,
+            LastModifiedDate = role.Meta?.LastModified ?? DateTime.MinValue
+        };
+    }
+
+    // ========== Role Permissions ==========
+
+    public async Task<List<RolePermission>> GetRolePermissionsAsync(string roleName)
+    {
+        var permissions = new List<RolePermission>();
+        try
+        {
+            // Search for the role by display name
+            var url = $"{_baseUrl}/Roles?filter=displayName eq \"{roleName}\"";
+            var response = await _httpClient.GetAsync(url);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("SCIM2 Roles request failed. Status: {StatusCode}", response.StatusCode);
+                return permissions;
+            }
+
+            var content = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(content);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("Resources", out var resources))
+            {
+                foreach (var resource in resources.EnumerateArray())
+                {
+                    if (resource.TryGetProperty("permissions", out var perms))
+                    {
+                        foreach (var perm in perms.EnumerateArray())
+                        {
+                            var value = perm.TryGetProperty("value", out var v) ? v.GetString() : null;
+                            var display = perm.TryGetProperty("display", out var d) ? d.GetString() : null;
+
+                            permissions.Add(new RolePermission
+                            {
+                                RoleName = roleName,
+                                ScopeName = value ?? string.Empty,
+                                Display = display ?? value ?? string.Empty
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching role permissions for role: {RoleName}", roleName);
+        }
+
+        return permissions;
+    }
+
+    public async Task<List<RolePermission>> GetUserRolePermissionsAsync(string wso2UserId)
+    {
+        var allPermissions = new List<RolePermission>();
+        try
+        {
+            // Get user's groups
+            var userUrl = $"{_baseUrl}/Users/{wso2UserId}";
+            var response = await _httpClient.GetAsync(userUrl);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Failed to fetch user {UserId}. Status: {StatusCode}", wso2UserId, response.StatusCode);
+                return allPermissions;
+            }
+
+            var content = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(content);
+            var root = doc.RootElement;
+
+            // Extract groups from the user resource
+            if (root.TryGetProperty("groups", out var groups))
+            {
+                foreach (var group in groups.EnumerateArray())
+                {
+                    var groupDisplay = group.TryGetProperty("display", out var d) ? d.GetString() : null;
+                    if (!string.IsNullOrEmpty(groupDisplay))
+                    {
+                        // Use group name as a role name to look up permissions
+                        var rolePermissions = await GetRolePermissionsAsync(groupDisplay);
+                        allPermissions.AddRange(rolePermissions);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching user role permissions for user: {UserId}", wso2UserId);
+        }
+
+        return allPermissions;
     }
 
     public async Task ResetPasswordAsync(string userId, string newPassword)

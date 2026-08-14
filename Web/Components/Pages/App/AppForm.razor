@@ -1,0 +1,141 @@
+@inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject DialogService DialogService
+
+<RadzenTemplateForm Data="@model" TItem="AppFormModel" Submit="@OnSubmit">
+    <RadzenStack Gap="1rem">
+        <RadzenRow Gap="1rem">
+            <RadzenColumn Size="6">
+                <RadzenFormField Text="Name" Style="width: 100%;">
+                    <RadzenTextBox @bind-Value="model.Name" Name="Name" Style="width: 100%;" />
+                    <RadzenRequiredValidator Component="Name" Text="Name is required" />
+                </RadzenFormField>
+            </RadzenColumn>
+            <RadzenColumn Size="6">
+                <RadzenFormField Text="Code" Style="width: 100%;">
+                    <RadzenTextBox @bind-Value="model.Code" Name="Code" Style="width: 100%;" />
+                    <RadzenRequiredValidator Component="Code" Text="Code is required" />
+                </RadzenFormField>
+            </RadzenColumn>
+        </RadzenRow>
+
+        <RadzenFormField Text="URL" Style="width: 100%;">
+            <RadzenTextBox @bind-Value="model.URL" Name="URL" Style="widtsh: 100%;" />
+        </RadzenFormField>
+
+        <RadzenRow Gap="1rem">
+            <RadzenColumn Size="6">
+                <RadzenFormField Text="Icon" Style="width: 100%;">
+                    <RadzenTextBox @bind-Value="model.Icon" Name="Icon" Style="width: 100%;" />
+                </RadzenFormField>
+            </RadzenColumn>
+            <RadzenColumn Size="6">
+                <RadzenFormField Text="Version" Style="width: 100%;">
+                    <RadzenTextBox @bind-Value="model.Version" Name="Version" Style="width: 100%;" />
+                </RadzenFormField>
+            </RadzenColumn>
+        </RadzenRow>
+
+        <RadzenFormField Text="Description" Style="width: 100%;">
+            <RadzenTextArea @bind-Value="model.Description" Name="Description" Rows="3" Style="width: 100%;" />
+        </RadzenFormField>
+
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+            <RadzenCheckBox @bind-Value="model.Status" Name="Status" />
+            <RadzenLabel Text="Active" Component="Status" />
+        </RadzenStack>
+
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem">
+            <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Light" Click="@(() => DialogService.Close(false))" />
+            <RadzenButton Text="Save" ButtonType="ButtonType.Submit" ButtonStyle="ButtonStyle.Primary" />
+        </RadzenStack>
+    </RadzenStack>
+</RadzenTemplateForm>
+
+@code {
+    [Parameter] public bool IsEdit { get; set; }
+    [Parameter] public int? AppId { get; set; }
+
+    private AppFormModel model = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (IsEdit && AppId.HasValue)
+        {
+            try
+            {
+                var app = await ApiService.GetAsync<AppDto>($"app/GetById/{AppId.Value}", AppConfig.AccessToken);
+                if (app != null)
+                {
+                    model = new AppFormModel
+                    {
+                        Name = app.Name ?? string.Empty,
+                        Code = app.Code ?? string.Empty,
+                        URL = app.URL,
+                        Icon = app.Icon,
+                        Description = app.Description,
+                        Version = app.Version,
+                        Status = app.Status
+                    };
+                }
+            }
+            catch (Exception ex)
+            {
+                NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load application: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task OnSubmit(AppFormModel form)
+    {
+        try
+        {
+            if (IsEdit && AppId.HasValue)
+            {
+                await ApiService.PutAsync("app/update", new
+                {
+                    id = AppId.Value,
+                    name = form.Name,
+                    code = form.Code,
+                    url = form.URL,
+                    icon = form.Icon,
+                    description = form.Description,
+                    version = form.Version,
+                    status = form.Status
+                }, AppConfig.AccessToken);
+                NotificationService.Notify(NotificationSeverity.Success, "Updated", "Application updated successfully");
+            }
+            else
+            {
+                await ApiService.PostAsync("app/create", new
+                {
+                    name = form.Name,
+                    code = form.Code,
+                    url = form.URL,
+                    icon = form.Icon,
+                    description = form.Description,
+                    version = form.Version,
+                    status = form.Status
+                }, AppConfig.AccessToken);
+                NotificationService.Notify(NotificationSeverity.Success, "Created", "Application created successfully");
+            }
+
+            DialogService.Close(true);
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", ex.Message);
+        }
+    }
+
+    private class AppFormModel
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Code { get; set; } = string.Empty;
+        public string? URL { get; set; }
+        public string? Icon { get; set; }
+        public string? Description { get; set; }
+        public string? Version { get; set; }
+        public bool Status { get; set; } = true;
+    }
+}

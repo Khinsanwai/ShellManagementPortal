@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using ShellMgmt.Web.Constants;
@@ -12,7 +13,8 @@ public class ApiService
     {
         var handler = new HttpClientHandler
         {
-            ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+            ServerCertificateCustomValidationCallback = (_, _, _, _) => true,
+            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
         };
         _httpClient = new HttpClient(handler);
     }

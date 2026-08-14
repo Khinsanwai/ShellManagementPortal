@@ -1,17 +1,28 @@
 @using Microsoft.AspNetCore.Components
 @using Radzen
 @using Radzen.Blazor
+@using ShellMgmt.Domain.AppModels
 @using ShellMgmt.Domain.MenuItemModels
 @inject NavigationManager NavigationManager
 
 <RadzenStack AlignItems="Radzen.AlignItems.Center" JustifyContent="Radzen.JustifyContent.Start" class="rz-py-4 rz-py-lg-6" Style="padding: 5px;">
-    <RadzenImage Path="images/logo.png" style="width: 150px; height: 50px;" AlternateText="Application logo" />
+    <RadzenImage Path="images/mini-side-bar-logo.png" style="width: 100px; height: 90px;" AlternateText="Application logo" />
 </RadzenStack>
 
-@* Debug *@
-<RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" class="rz-m-2" AllowClose="false">
-    <small>MenuItemPanel received: @(MenuItems?.Count ?? 0) items</small>
-</RadzenAlert>
+@* Assigned Applications *@
+@if (AssignedApps != null && AssignedApps.Any())
+{
+    <RadzenPanelMenu>
+        <RadzenPanelMenuItem Text="Applications" Icon="apps" Expanded="true">
+            @foreach (var app in AssignedApps)
+            {
+                <RadzenPanelMenuItem Text="@app.ApplicationName"
+                                     Icon="@(GetAppIcon(app))"
+                                     Path="@($"/app/{app.ApplicationId}")" />
+            }
+        </RadzenPanelMenuItem>
+    </RadzenPanelMenu>
+}
 
 @* Dynamic Menu from Database *@
 @if (MenuItems != null && MenuItems.Any())
@@ -42,7 +53,7 @@
         }
     </RadzenPanelMenu>
 }
-else
+else if (AssignedApps == null || !AssignedApps.Any())
 {
     <RadzenStack Orientation="Orientation.Vertical" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" class="rz-p-4">
         <RadzenIcon Icon="menu" Style="font-size: 48px; color: var(--rz-text-disabled-color);" />
@@ -54,11 +65,26 @@ else
     [Parameter]
     public List<MenuItemDto> MenuItems { get; set; } = [];
 
+    [Parameter]
+    public List<UserChildApplicationAssignmentDto> AssignedApps { get; set; } = [];
+
+    private static string GetAppIcon(UserChildApplicationAssignmentDto app)
+    {
+        if (!string.IsNullOrEmpty(app.ApplicationIcon))
+            return app.ApplicationIcon;
+        return "apps";
+    }
+
     private static string GetMenuIcon(string? name)
     {
         return name?.ToLower() switch
         {
             "dashboard" => "dashboard",
+            "identity management" => "fingerprint",
+            "organization management" => "corporate_fare",
+            "application management" => "apps",
+            "authorization management" => "lock",
+            "system management" => "settings",
             "administration" => "admin_panel_settings",
             "settings" => "settings",
             "users" => "people",
@@ -70,8 +96,11 @@ else
             "menu items" => "menu",
             "user groups" => "group_add",
             "groups" => "group_add",
+            "roles" => "admin_panel_settings",
             "resources" => "key",
             "tenants" => "business",
+            "audit logs" => "history",
+            "audit dashboard" => "dashboard",
             "user menu assignment" => "assignment",
             _ => "folder"
         };

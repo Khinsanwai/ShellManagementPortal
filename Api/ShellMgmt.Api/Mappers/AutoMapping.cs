@@ -1,6 +1,9 @@
 using AutoMapper;
 using SharedKernel.Domain;
+using ShellMgmt.Application.AppService.Create;
 using ShellMgmt.Application.AppService.Get;
+using ShellMgmt.Application.UserlogService.Create;
+using ShellMgmt.Application.UserlogService.Get;
 using ShellMgmt.Application.ClaimService.Create;
 using ShellMgmt.Application.ClaimService.Get;
 using ShellMgmt.Application.InstitutionService.Create;
@@ -17,6 +20,7 @@ using ShellMgmt.Domain.MenuItemModels;
 using ShellMgmt.Domain.OrgUnitModels;
 using ShellMgmt.Domain.ResourceModels;
 using ShellMgmt.Domain.TenantModels;
+using ShellMgmt.Domain.UserlogModels;
 
 namespace ShellMgmt.Api.Mappers;
 
@@ -60,5 +64,12 @@ public class AutoMapping : Profile
         CreateMap<App, AppDto>();
         CreateMap<PagedList<App>, PagedList<AppDto>>().ReverseMap();
         CreateMap<GetAppQuery, AppDto>().ReverseMap();
+        CreateMap<CreateAppCommand, AppDto>().ReverseMap();
+
+        // Userlog
+        CreateMap<Userlog, UserlogDto>();
+        CreateMap<PagedList<Userlog>, PagedList<UserlogDto>>().ReverseMap();
+        CreateMap<GetUserlogQuery, UserlogDto>().ReverseMap();
+        CreateMap<CreateUserlogCommand, UserlogDto>().ReverseMap();
     }
 }

@@ -33,6 +33,8 @@ public class AppGetSpec : Specification<App>
         {
             "id" => x => x.Id,
             "name" => x => x.Name,
+            "code" => x => x.Code,
+            "createddate" => x => x.CreatedDate,
             _ => x => x.Id
         };
     }

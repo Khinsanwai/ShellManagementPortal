@@ -1,0 +1,301 @@
+@page "/audit-logs"
+@attribute [Authorize]
+@inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JS
+
+<PageTitle>Audit Logs - Shell Management Portal</PageTitle>
+
+<RadzenRow class="rz-p-4">
+    <RadzenColumn Size="12">
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                <RadzenButton Icon="arrow_back" ButtonStyle="ButtonStyle.Light" Click="@(() => NavigationManager.NavigateTo("/"))" Tooltip="Return to Dashboard" />
+                <RadzenText TextStyle="TextStyle.H4">Audit Logs</RadzenText>
+            </RadzenStack>
+            <RadzenButton Text="Export CSV" Icon="download" ButtonStyle="ButtonStyle.Success" Click="@ExportCsv" Disabled="@(items == null || !items.Any())" />
+        </RadzenStack>
+    </RadzenColumn>
+</RadzenRow>
+
+@* Filters *@
+<RadzenCard class="rz-mx-4 rz-mb-3">
+    <RadzenStack Gap="0.75rem">
+        <RadzenRow Gap="1rem">
+            <RadzenColumn Size="12" SizeMD="3">
+                <RadzenFormField Text="Username" Style="width: 100%;">
+                    <RadzenTextBox @bind-Value="filterUsername" Placeholder="Search username..." Style="width: 100%;" />
+                </RadzenFormField>
+            </RadzenColumn>
+            <RadzenColumn Size="12" SizeMD="2">
+                <RadzenFormField Text="Category" Style="width: 100%;">
+                    <RadzenDropDown @bind-Value="filterCategory" Data="@categories" AllowClear="true" Placeholder="All" Style="width: 100%;" />
+                </RadzenFormField>
+            </RadzenColumn>
+            <RadzenColumn Size="12" SizeMD="2">
+                <RadzenFormField Text="Action" Style="width: 100%;">
+                    <RadzenTextBox @bind-Value="filterAction" Placeholder="Search action..." Style="width: 100%;" />
+                </RadzenFormField>
+            </RadzenColumn>
+            <RadzenColumn Size="12" SizeMD="2">
+                <RadzenFormField Text="Module" Style="width: 100%;">
+                    <RadzenDropDown @bind-Value="filterModule" Data="@modules" AllowClear="true" Placeholder="All" Style="width: 100%;" />
+                </RadzenFormField>
+            </RadzenColumn>
+            <RadzenColumn Size="12" SizeMD="3">
+                <RadzenFormField Text="Application" Style="width: 100%;">
+                    <RadzenTextBox @bind-Value="filterApplication" Placeholder="Search application..." Style="width: 100%;" />
+                </RadzenFormField>
+            </RadzenColumn>
+        </RadzenRow>
+        <RadzenRow Gap="1rem">
+            <RadzenColumn Size="12" SizeMD="3">
+                <RadzenFormField Text="Result" Style="width: 100%;">
+                    <RadzenDropDown @bind-Value="filterResult" Data="@results" AllowClear="true" Placeholder="All" Style="width: 100%;" />
+                </RadzenFormField>
+            </RadzenColumn>
+            <RadzenColumn Size="12" SizeMD="3">
+                <RadzenFormField Text="Date From" Style="width: 100%;">
+                    <RadzenDatePicker @bind-Value="dateFrom" DateFormat="yyyy-MM-dd" Placeholder="Start date" Style="width: 100%;" />
+                </RadzenFormField>
+            </RadzenColumn>
+            <RadzenColumn Size="12" SizeMD="3">
+                <RadzenFormField Text="Date To" Style="width: 100%;">
+                    <RadzenDatePicker @bind-Value="dateTo" DateFormat="yyyy-MM-dd" Placeholder="End date" Style="width: 100%;" />
+                </RadzenFormField>
+            </RadzenColumn>
+            <RadzenColumn Size="12" SizeMD="3">
+                <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" AlignItems="AlignItems.End" Style="height: 100%;">
+                    <RadzenButton Text="Search" Icon="search" ButtonStyle="ButtonStyle.Primary" Click="@Search" Style="width: 100%;" />
+                    <RadzenButton Text="Clear" Icon="clear" ButtonStyle="ButtonStyle.Light" Click="@ClearFilters" />
+                </RadzenStack>
+            </RadzenColumn>
+        </RadzenRow>
+    </RadzenStack>
+</RadzenCard>
+
+@* Data Grid *@
+<RadzenCard class="rz-mx-4">
+    <RadzenDataGrid @ref="grid" Data="@items" TItem="UserlogDto" AllowSorting="true" AllowPaging="true" PageSize="20"
+                    ShowPagingSummary="true" AllowColumnResize="true" PagingSummaryFormat="@pagingSummary">
+        <Columns>
+            <RadzenDataGridColumn TItem="UserlogDto" Property="CreatedDate" Title="Time" Sortable="true" Width="160px">
+                <Template Context="l">
+                    @l.CreatedDate.ToString("yyyy-MM-dd HH:mm:ss")
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="UserlogDto" Property="Username" Title="Username" Sortable="true" Width="140px">
+                <Template Context="l">
+                    <strong>@(l.Username ?? "—")</strong>
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="UserlogDto" Property="UserId" Title="WSO2 User ID" Width="160px">
+                <Template Context="l">
+                    <span style="font-size: 0.8em; color: var(--rz-text-secondary);">@(l.UserId ?? "—")</span>
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="UserlogDto" Property="Category" Title="Category" Sortable="true" Width="120px">
+                <Template Context="l">
+                    <RadzenBadge Text="@GetCategoryText(l.Category)" BadgeStyle="@GetCategoryStyle(l.Category)" />
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="UserlogDto" Property="Action" Title="Action" Sortable="true" Width="140px" />
+            <RadzenDataGridColumn TItem="UserlogDto" Property="Module" Title="Module" Sortable="true" Width="130px">
+                <Template Context="l">
+                    @(l.Module ?? "—")
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="UserlogDto" Property="Application" Title="Application" Width="140px">
+                <Template Context="l">
+                    @(l.Application ?? "—")
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="UserlogDto" Property="Result" Title="Result" Sortable="true" Width="100px">
+                <Template Context="l">
+                    @if (l.Result == "Success")
+                    {
+                        <RadzenBadge Text="Success" BadgeStyle="BadgeStyle.Success" />
+                    }
+                    else
+                    {
+                        <RadzenBadge Text="@l.Result" BadgeStyle="BadgeStyle.Danger" />
+                    }
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="UserlogDto" Property="Description" Title="Description" Sortable="false" MinWidth="200px">
+                <Template Context="l">
+                    @if (!string.IsNullOrEmpty(l.Description) && l.Description.Length > 80)
+                    {
+                        <span title="@l.Description">@l.Description.Substring(0, 80)...</span>
+                    }
+                    else
+                    {
+                        @(l.Description ?? "—")
+                    }
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="UserlogDto" Property="IPAddress" Title="IP Address" Width="130px" />
+            <RadzenDataGridColumn TItem="UserlogDto" Property="UserAgent" Title="Browser / OS" Width="200px">
+                <Template Context="l">
+                    @if (!string.IsNullOrEmpty(l.UserAgent) && l.UserAgent.Length > 40)
+                    {
+                        <span title="@l.UserAgent">@l.UserAgent.Substring(0, 40)...</span>
+                    }
+                    else
+                    {
+                        @(l.UserAgent ?? "—")
+                    }
+                </Template>
+            </RadzenDataGridColumn>
+        </Columns>
+    </RadzenDataGrid>
+</RadzenCard>
+
+@code {
+    RadzenDataGrid<UserlogDto>? grid;
+    List<UserlogDto>? items;
+    int totalCount;
+
+    // Filters
+    string? filterUsername;
+    string? filterCategory;
+    string? filterAction;
+    string? filterModule;
+    string? filterApplication;
+    string? filterResult;
+    DateTime? dateFrom;
+    DateTime? dateTo;
+
+    string pagingSummary = "Page {0} of {1} ({2} records)";
+
+    List<string> categories = new() { "Login", "Logout", "FailedLogin", "Action" };
+    List<string> modules = new() { "User", "Group", "Role", "Claim", "App", "MenuItem", "Institution", "OrgUnit", "Resource", "Tenant", "Authentication" };
+    List<string> results = new() { "Success", "Failed" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            var endpoint = "userlog/get?Take=200&SortBy=createddate&OrderBy=DESC";
+
+            if (!string.IsNullOrEmpty(filterUsername))
+                endpoint += $"&Username={Uri.EscapeDataString(filterUsername)}";
+            if (!string.IsNullOrEmpty(filterCategory))
+                endpoint += $"&Category={Uri.EscapeDataString(filterCategory)}";
+            if (!string.IsNullOrEmpty(filterAction))
+                endpoint += $"&Action={Uri.EscapeDataString(filterAction)}";
+            if (!string.IsNullOrEmpty(filterModule))
+                endpoint += $"&Module={Uri.EscapeDataString(filterModule)}";
+            if (!string.IsNullOrEmpty(filterApplication))
+                endpoint += $"&Application={Uri.EscapeDataString(filterApplication)}";
+            if (!string.IsNullOrEmpty(filterResult))
+                endpoint += $"&Result={Uri.EscapeDataString(filterResult)}";
+            if (dateFrom.HasValue)
+                endpoint += $"&DateFrom={dateFrom.Value:yyyy-MM-dd}";
+            if (dateTo.HasValue)
+                endpoint += $"&DateTo={dateTo.Value:yyyy-MM-dd}";
+
+            var result = await ApiService.GetAsync<AuditLogListResponse>(endpoint, AppConfig.AccessToken);
+            items = result?.Items ?? new List<UserlogDto>();
+            totalCount = result?.Total ?? items.Count;
+
+            pagingSummary = $"Page {{0}} of {{1}} ({totalCount} records)";
+            if (grid != null) await grid.Reload();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load audit logs: {ex.Message}");
+        }
+    }
+
+    private async Task Search()
+    {
+        await LoadData();
+    }
+
+    private async Task ClearFilters()
+    {
+        filterUsername = null;
+        filterCategory = null;
+        filterAction = null;
+        filterModule = null;
+        filterApplication = null;
+        filterResult = null;
+        dateFrom = null;
+        dateTo = null;
+        await LoadData();
+    }
+
+    private async Task ExportCsv()
+    {
+        if (items == null || !items.Any())
+        {
+            NotificationService.Notify(NotificationSeverity.Warning, "No Data", "No records to export.");
+            return;
+        }
+
+        var csv = new System.Text.StringBuilder();
+        csv.AppendLine("Time,Username,WSO2 User ID,Category,Action,Module,Application,Result,Description,IP Address,User Agent");
+
+        foreach (var item in items)
+        {
+            csv.AppendLine(string.Join(",",
+                EscapeCsv(item.CreatedDate.ToString("yyyy-MM-dd HH:mm:ss")),
+                EscapeCsv(item.Username),
+                EscapeCsv(item.UserId),
+                EscapeCsv(item.Category),
+                EscapeCsv(item.Action),
+                EscapeCsv(item.Module),
+                EscapeCsv(item.Application),
+                EscapeCsv(item.Result),
+                EscapeCsv(item.Description),
+                EscapeCsv(item.IPAddress),
+                EscapeCsv(item.UserAgent)
+            ));
+        }
+
+        var fileName = $"audit-logs-{DateTime.Now:yyyyMMdd-HHmmss}.csv";
+        var bytes = System.Text.Encoding.UTF8.GetBytes(csv.ToString());
+        var base64 = Convert.ToBase64String(bytes);
+
+        await JS.InvokeVoidAsync("downloadFileFromBase64", fileName, base64, "text/csv");
+        NotificationService.Notify(NotificationSeverity.Success, "Exported", $"{items.Count} records exported to {fileName}");
+    }
+
+    private static string EscapeCsv(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return "\"\"";
+        var escaped = value.Replace("\"", "\"\"");
+        return $"\"{escaped}\"";
+    }
+
+    private static string GetCategoryText(string? category) => category switch
+    {
+        "Login" => "Login",
+        "Logout" => "Logout",
+        "FailedLogin" => "Failed Login",
+        "Action" => "Action",
+        _ => category ?? "Unknown"
+    };
+
+    private static BadgeStyle GetCategoryStyle(string? category) => category switch
+    {
+        "Login" => BadgeStyle.Success,
+        "Logout" => BadgeStyle.Info,
+        "FailedLogin" => BadgeStyle.Danger,
+        "Action" => BadgeStyle.Warning,
+        _ => BadgeStyle.Light
+    };
+
+    public class AuditLogListResponse
+    {
+        public List<UserlogDto> Items { get; set; } = new();
+        public int Total { get; set; }
+    }
+}

@@ -1,0 +1,242 @@
+@page "/user-app-assign"
+@attribute [Authorize]
+@inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject NavigationManager NavigationManager
+
+<PageTitle>User Application Assignment - Shell Management Portal</PageTitle>
+
+<RadzenRow class="rz-p-4">
+    <RadzenColumn Size="12">
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                <RadzenButton Icon="arrow_back" ButtonStyle="ButtonStyle.Light" Click="@(() => NavigationManager.NavigateTo("/"))" Tooltip="Return to Dashboard" />
+                <RadzenText TextStyle="TextStyle.H4">User Application Assignment</RadzenText>
+            </RadzenStack>
+            <RadzenButton Text="Save Assignments" Icon="save" ButtonStyle="ButtonStyle.Primary"
+                          Click="@SaveAssignments" Disabled="@isSaving" Busy="@isSaving" />
+        </RadzenStack>
+    </RadzenColumn>
+</RadzenRow>
+
+<RadzenRow Gap="1rem">
+    @* Left Panel: Users List *@
+    <RadzenColumn Size="5">
+        <RadzenCard>
+            <RadzenText TextStyle="TextStyle.H5" class="rz-mb-3">WSO2 Users</RadzenText>
+            <RadzenTextBox @bind-Value="@searchTerm" Placeholder="Search users..." Style="width: 100%; margin-bottom: 1rem;"
+                           @onkeyup="@OnSearchKeyUp" />
+            <RadzenDataGrid @ref="userGrid" Data="@users" TItem="UserDto" AllowSorting="true" AllowPaging="true" PageSize="10"
+                            ShowPagingSummary="true" SelectionMode="DataGridSelectionMode.Single" @bind-Value="@selectedUsers"
+                            RowSelect="@OnUserSelected">
+                <Columns>
+                    <RadzenDataGridColumn TItem="UserDto" Property="UserName" Title="Username" Sortable="true">
+                        <Template Context="user">
+                            <strong>@user.UserName</strong>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="UserDto" Title="Name" Sortable="false">
+                        <Template Context="user">
+                            @user.FirstName @user.LastName
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        </RadzenCard>
+    </RadzenColumn>
+
+    @* Right Panel: Application Assignments *@
+    <RadzenColumn Size="7">
+        <RadzenCard>
+            @if (selectedUser != null)
+            {
+                <RadzenText TextStyle="TextStyle.H5" class="rz-mb-3">
+                    Applications for <strong>@selectedUser.UserName</strong>
+                </RadzenText>
+
+                @if (allApps != null && allApps.Count > 0)
+                {
+                    <RadzenStack Gap="0.5rem">
+                        @foreach (var app in allApps)
+                        {
+                            <RadzenCard Variant="Variant.Outlined" class="rz-p-3">
+                                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                                    <RadzenCheckBox Value="@(IsAppAssigned(app.Id ?? 0))"
+                                                    TValue="bool"
+                                                    ValueChanged="@((bool val) => ToggleApp(app.Id ?? 0, val))" />
+                                    <RadzenStack Gap="0" class="rz-flex-1">
+                                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                            <RadzenText TextStyle="TextStyle.Subtitle1"><strong>@app.Name</strong></RadzenText>
+                                            @if (!string.IsNullOrEmpty(app.Code))
+                                            {
+                                                <RadzenBadge Text="@app.Code" BadgeStyle="BadgeStyle.Info" />
+                                            }
+                                        </RadzenStack>
+                                        @if (!string.IsNullOrEmpty(app.Description))
+                                        {
+                                            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary">@app.Description</RadzenText>
+                                        }
+                                    </RadzenStack>
+                                    @if (!string.IsNullOrEmpty(app.URL))
+                                    {
+                                        <RadzenIcon Icon="open_in_new" Style="font-size: 18px; color: var(--rz-text-disabled-color);" />
+                                    }
+                                </RadzenStack>
+                            </RadzenCard>
+                        }
+                    </RadzenStack>
+                }
+                else
+                {
+                    <RadzenProgressBarCircular ProgressBarStyle="ProgressBarStyle.Primary" Value="100" ShowValue="false" Mode="ProgressBarMode.Indeterminate" />
+                }
+            }
+            else
+            {
+                <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="min-height: 300px;">
+                    <RadzenIcon Icon="apps" Style="font-size: 48px; color: var(--rz-text-disabled-color);" />
+                    <RadzenText TextStyle="TextStyle.H6" class="rz-text-secondary">Select a user to manage application access</RadzenText>
+                </RadzenStack>
+            }
+        </RadzenCard>
+    </RadzenColumn>
+</RadzenRow>
+
+@code {
+    RadzenDataGrid<UserDto>? userGrid;
+    List<UserDto>? users;
+    IList<UserDto>? selectedUsers;
+    UserDto? selectedUser;
+
+    List<AppDto>? allApps;
+    HashSet<int> assignedAppIds = new();
+    string? searchTerm;
+    bool isSaving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsers();
+        await LoadAllApps();
+    }
+
+    private async Task LoadUsers()
+    {
+        try
+        {
+            var result = await ApiService.GetAsync<UsersListResponse>("user/get?pageSize=100", AppConfig.AccessToken);
+            users = result?.Items;
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load users: {ex.Message}");
+        }
+    }
+
+    private async Task LoadAllApps()
+    {
+        try
+        {
+            var result = await ApiService.GetAsync<List<AppDto>>("app/GetAll", AppConfig.AccessToken);
+            allApps = result?.Where(a => a.Status).ToList();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load applications: {ex.Message}");
+        }
+    }
+
+    private async Task OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            try
+            {
+                var endpoint = "user/get?pageSize=100";
+                if (!string.IsNullOrEmpty(searchTerm))
+                    endpoint += $"&search={Uri.EscapeDataString(searchTerm)}";
+
+                var result = await ApiService.GetAsync<UsersListResponse>(endpoint, AppConfig.AccessToken);
+                users = result?.Items;
+                if (userGrid != null) await userGrid.Reload();
+            }
+            catch (Exception ex)
+            {
+                NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to search: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task OnUserSelected(UserDto user)
+    {
+        selectedUser = user;
+        await LoadUserApps();
+    }
+
+    private async Task LoadUserApps()
+    {
+        if (selectedUser == null) return;
+
+        try
+        {
+            var assignments = await ApiService.GetAsync<List<UserChildApplicationAssignmentDto>>(
+                $"userchildapplication/GetUserApps/{selectedUser.Id}", AppConfig.AccessToken);
+
+            assignedAppIds = assignments?
+                .Where(a => a.ApplicationId > 0)
+                .Select(a => a.ApplicationId)
+                .ToHashSet() ?? new HashSet<int>();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load user applications: {ex.Message}");
+            assignedAppIds = new HashSet<int>();
+        }
+        StateHasChanged();
+    }
+
+    private bool IsAppAssigned(int appId) => assignedAppIds.Contains(appId);
+
+    private void ToggleApp(int appId, bool value)
+    {
+        if (value)
+            assignedAppIds.Add(appId);
+        else
+            assignedAppIds.Remove(appId);
+    }
+
+    private async Task SaveAssignments()
+    {
+        if (selectedUser == null) return;
+
+        isSaving = true;
+        StateHasChanged();
+
+        try
+        {
+            await ApiService.PostAsync("userchildapplication/AssignApps", new
+            {
+                wso2UserId = selectedUser.Id,
+                wso2UserName = selectedUser.UserName,
+                applicationIds = assignedAppIds.ToList()
+            }, AppConfig.AccessToken);
+
+            NotificationService.Notify(NotificationSeverity.Success, "Saved",
+                $"Application assignments updated for {selectedUser.UserName}");
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to save: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    public class UsersListResponse
+    {
+        public List<UserDto> Items { get; set; } = new();
+        public int Total { get; set; }
+    }
+}

@@ -1,0 +1,157 @@
+@page "/api-resources"
+@attribute [Authorize]
+@using ShellMgmt.Domain.ApiResourceModels
+@inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject DialogService DialogService
+@inject NavigationManager NavigationManager
+
+<PageTitle>API Resources - Shell Management Portal</PageTitle>
+
+<RadzenRow class="rz-p-4">
+    <RadzenColumn Size="12">
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                <RadzenButton Icon="arrow_back" ButtonStyle="ButtonStyle.Light" Click="@(() => NavigationManager.NavigateTo("/"))" Tooltip="Return to Dashboard" />
+                <RadzenText TextStyle="TextStyle.H4">API Resources</RadzenText>
+            </RadzenStack>
+            <RadzenButton Text="Add API Resource" Icon="add" Click="@CreateApiResource" />
+        </RadzenStack>
+    </RadzenColumn>
+</RadzenRow>
+
+<RadzenRow class="rz-p-4">
+    <RadzenColumn Size="12">
+        <RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary">
+            Manage WSO2 API Resources and their scopes. API Resources define what permissions an application can request.
+        </RadzenText>
+    </RadzenColumn>
+</RadzenRow>
+
+<RadzenDataGrid @ref="grid" Data="@items" TItem="ApiResourceDto" AllowSorting="true" AllowPaging="true" PageSize="10"
+                ShowPagingSummary="true" AllowFiltering="true">
+    <Columns>
+        <RadzenDataGridColumn TItem="ApiResourceDto" Property="Name" Title="Name" Sortable="true" Width="200px">
+            <Template Context="r">
+                <strong>@r.Name</strong>
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="ApiResourceDto" Property="Identifier" Title="Identifier" Sortable="true" Width="250px">
+            <Template Context="r">
+                <RadzenBadge Text="@r.Identifier" BadgeStyle="BadgeStyle.Info" />
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="ApiResourceDto" Property="Description" Title="Description" Sortable="false">
+            <Template Context="r">
+                @if (!string.IsNullOrEmpty(r.Description))
+                {
+                    @(r.Description.Length > 80 ? r.Description.Substring(0, 80) + "..." : r.Description)
+                }
+                else
+                {
+                    <span style="color: var(--rz-text-secondary);">—</span>
+                }
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="ApiResourceDto" Title="Scopes" Sortable="false" Width="120px">
+            <Template Context="r">
+                <RadzenBadge Text="@($"{r.Scopes.Count} scopes")" BadgeStyle="BadgeStyle.Success" />
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="ApiResourceDto" Property="RequiresAuthorization" Title="Auth Required" Sortable="true" Width="120px">
+            <Template Context="r">
+                @if (r.RequiresAuthorization)
+                {
+                    <RadzenBadge Text="Yes" BadgeStyle="BadgeStyle.Warning" />
+                }
+                else
+                {
+                    <RadzenBadge Text="No" BadgeStyle="BadgeStyle.Light" />
+                }
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="ApiResourceDto" Title="Actions" Width="150px">
+            <Template Context="r">
+                <RadzenButton Icon="visibility" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Info" Tooltip="View"
+                              Click="@(() => ViewApiResource(r))" />
+                <RadzenButton Icon="edit" Size="ButtonSize.Small" Tooltip="Edit" Click="@(() => EditApiResource(r))" />
+                <RadzenButton Icon="delete" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Danger" Tooltip="Delete"
+                              Click="@(() => DeleteApiResource(r))" />
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    RadzenDataGrid<ApiResourceDto>? grid;
+    List<ApiResourceDto>? items;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            items = await ApiService.GetAsync<List<ApiResourceDto>>("ApiResource/GetAll", AppConfig.AccessToken);
+            if (grid != null) await grid.Reload();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load API resources: {ex.Message}");
+        }
+    }
+
+    private async Task CreateApiResource()
+    {
+        var result = await DialogService.OpenAsync<ApiResourceForm>("Add API Resource",
+            new Dictionary<string, object?> { { "IsEdit", false } },
+            new DialogOptions { Width = "700px", Resizable = true, Draggable = true });
+        if (result == true) await ReloadData();
+    }
+
+    private async Task ViewApiResource(ApiResourceDto resource)
+    {
+        var result = await DialogService.OpenAsync<ApiResourceForm>("View API Resource",
+            new Dictionary<string, object?> { { "IsEdit", false }, { "ApiResourceId", resource.Id }, { "IsViewOnly", true } },
+            new DialogOptions { Width = "700px", Resizable = true, Draggable = true });
+    }
+
+    private async Task EditApiResource(ApiResourceDto resource)
+    {
+        var result = await DialogService.OpenAsync<ApiResourceForm>("Edit API Resource",
+            new Dictionary<string, object?> { { "IsEdit", true }, { "ApiResourceId", resource.Id } },
+            new DialogOptions { Width = "700px", Resizable = true, Draggable = true });
+        if (result == true) await ReloadData();
+    }
+
+    private async Task DeleteApiResource(ApiResourceDto resource)
+    {
+        var confirmed = await DialogService.Confirm(
+            $"Are you sure you want to delete API resource '{resource.Name}'?\n\nThis will also delete all associated scopes. This action cannot be undone.",
+            "Delete API Resource",
+            new ConfirmOptions { OkButtonText = "Delete", CancelButtonText = "Cancel" });
+
+        if (confirmed == true)
+        {
+            try
+            {
+                await ApiService.DeleteAsync($"ApiResource/Delete/{resource.Id}", AppConfig.AccessToken);
+                NotificationService.Notify(NotificationSeverity.Success, "Deleted", $"API resource '{resource.Name}' deleted successfully");
+                await ReloadData();
+            }
+            catch (Exception ex)
+            {
+                NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to delete API resource: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task ReloadData()
+    {
+        if (grid != null) await grid.Reload();
+        else await LoadData();
+    }
+}

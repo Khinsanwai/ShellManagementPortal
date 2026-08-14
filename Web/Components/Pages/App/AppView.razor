@@ -1,0 +1,106 @@
+@page "/app/{AppId:int}"
+@attribute [Authorize]
+@inject ApiService ApiService
+@inject NotificationService NotificationService
+@inject IJSRuntime JSRuntime
+@inject ILogger<AppView> Logger
+
+@if (isLoading)
+{
+    <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="height: 100%; min-height: 400px;">
+        <RadzenProgressBarCircular ProgressBarStyle="ProgressBarStyle.Primary" Value="100" ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Large" />
+        <RadzenText TextStyle="TextStyle.H6" class="rz-text-secondary rz-mt-3">Loading application...</RadzenText>
+    </RadzenStack>
+}
+else if (!string.IsNullOrEmpty(appUrl))
+{
+    <iframe src="@appUrl"
+            style="width: 100%; height: calc(100vh - 60px); border: none; display: block;"
+            allowfullscreen
+            sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals allow-downloads"
+            @onload="@OnIframeLoaded">
+    </iframe>
+}
+else if (!string.IsNullOrEmpty(errorMessage))
+{
+    <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="height: 100%; min-height: 400px;">
+        <RadzenIcon Icon="error_outline" Style="font-size: 64px; color: var(--rz-danger);" />
+        <RadzenText TextStyle="TextStyle.H5" class="rz-text-danger rz-mt-3">Unable to load application</RadzenText>
+        <RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary">@errorMessage</RadzenText>
+    </RadzenStack>
+}
+
+@code {
+    [Parameter]
+    public int AppId { get; set; }
+
+    private string? appUrl;
+    private string? errorMessage;
+    private bool isLoading = true;
+
+
+    protected override async Task OnInitializedAsync()
+    {
+     
+        await LoadApp();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Reload when navigating to a different app
+        await LoadApp();
+    }
+
+    private async Task LoadApp()
+    {
+        isLoading = true;
+        errorMessage = null;
+        appUrl = null;
+
+        try
+        {
+            var app = await ApiService.GetAsync<AppDto>($"app/GetById/{AppId}", AppConfig.AccessToken);
+            if (app != null && app.Status)
+            {
+                if (!string.IsNullOrEmpty(app.URL))
+                {
+                    appUrl = app.URL;
+                }
+                else
+                {
+                    errorMessage = $"Application '{app.Name}' does not have a configured URL.";
+                }
+            }
+            else
+            {
+                errorMessage = "Application not found or is inactive.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to load application: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task OnIframeLoaded()
+    {
+        try
+        {
+            var tokenPreview = AppConfig.AccessToken.Length > 20
+                ? AppConfig.AccessToken[..20] + "..."
+                : AppConfig.AccessToken;
+            Logger.LogInformation("Registering token handshake for child app {AppId}. Token preview: {TokenPreview}", AppId, tokenPreview);
+
+            await JSRuntime.InvokeVoidAsync("registerChildTokenHandshake", AppConfig.AccessToken);
+            Logger.LogInformation("Token handshake registered for child app {AppId}. Waiting for child_ready message.", AppId);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to register token handshake for child app {AppId}.", AppId);
+        }
+    }
+}

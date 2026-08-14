@@ -5,6 +5,7 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.JSInterop;
 using Radzen;
 using Radzen.Blazor;
+using ShellMgmt.Domain.AppModels;
 using ShellMgmt.Domain.MenuItemModels;
 using ShellMgmt.Domain.UserModels;
 using ShellMgmt.Web.Constants;
@@ -28,6 +29,7 @@ public partial class MainLayout
     private bool sidebarExpanded = true;
     private bool isUserAdmin = false;
     private List<MenuItemDto>? menuItems;
+    private List<UserChildApplicationAssignmentDto>? assignedApps;
     private string? userDisplayName;
 
     protected override async Task OnInitializedAsync()
@@ -84,6 +86,23 @@ public partial class MainLayout
                 catch (Exception ex)
                 {
                     Logger.LogWarning(ex, "Failed to fetch user profile for header");
+                }
+
+                // Load assigned applications for sidebar (group-based)
+                try
+                {
+                    var sub = Context.HttpContext?.User.FindFirst("sub")?.Value ?? string.Empty;
+                    if (!string.IsNullOrEmpty(sub) && !string.IsNullOrEmpty(AppConfig.AccessToken))
+                    {
+                        assignedApps = await ApiService.GetAsync<List<UserChildApplicationAssignmentDto>>(
+                            $"appgroup/GetUserApps/{sub}", AppConfig.AccessToken);
+                        Logger.LogInformation("Loaded {Count} assigned applications (group-based)", assignedApps?.Count ?? 0);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Failed to load assigned applications");
+                    assignedApps = new List<UserChildApplicationAssignmentDto>();
                 }
 
                 // Load tenant (non-critical)
@@ -254,6 +273,7 @@ public partial class MainLayout
             "user groups" => "group_add",
             "resources" => "key",
             "tenants" => "business",
+            "api resources" => "api",
             _ => "folder"
         };
     }
