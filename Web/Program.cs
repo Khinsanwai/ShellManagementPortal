@@ -46,9 +46,10 @@ builder.Services.AddAuthentication(options =>
 })
 .AddCookie(options =>
 {
-    options.Cookie.SameSite = SameSiteMode.Strict;
+    options.Cookie.SameSite = SameSiteMode.None;
     options.Cookie.HttpOnly = true;
     options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    options.Cookie.IsEssential = true;
     options.ExpireTimeSpan = TimeSpan.FromMinutes(60);
     options.SlidingExpiration = true;
     options.LoginPath = "/Account/Login";
@@ -66,7 +67,7 @@ builder.Services.AddAuthentication(options =>
 
     if (string.IsNullOrEmpty(wso2OidcAuthority))
     {
-        wso2OidcAuthority = "https://localhost:9443/oauth2/oidcdiscovery";
+        wso2OidcAuthority = "https://192.168.120.188:9443/oauth2/oidcdiscovery";
     }
 
     if (wso2OidcAuthority.EndsWith("/token", StringComparison.OrdinalIgnoreCase))
@@ -87,6 +88,7 @@ builder.Services.AddAuthentication(options =>
     {
         options.ClientSecret = clientSecret;
     }
+    options.CallbackPath = "/signin-oidc";
 
     options.ResponseType = "code";
 
@@ -197,12 +199,21 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseCors();
+
 app.UseHttpsRedirection();
-app.MapControllers();
+
 app.UseStaticFiles();
+
+app.UseRouting();
+
+app.UseCors();
+
 app.UseAuthentication();
-app.UseAntiforgery();
 app.UseAuthorization();
+
+app.UseAntiforgery();
+
+app.MapControllers();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
