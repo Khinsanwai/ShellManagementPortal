@@ -412,8 +412,10 @@ else
                     ?? Context.HttpContext?.User.Identity?.Name
                     ?? string.Empty;
 
-                // Admin user gets all menus
-                if (string.Equals(userName, adminUser, StringComparison.OrdinalIgnoreCase))
+                var allowAllMenus = Configuration.GetValue("WSO2:AllowAllMenus", false);
+
+                // Admin user or AllowAllMenus in appsettings gets all menus
+                if (allowAllMenus || string.Equals(userName, adminUser, StringComparison.OrdinalIgnoreCase))
                 {
                     userMenuItems = allMenus;
                 }

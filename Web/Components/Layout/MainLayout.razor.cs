@@ -133,16 +133,17 @@ public partial class MainLayout
 
                     var sub = Context.HttpContext?.User.FindFirst("sub")?.Value ?? string.Empty;
                     var adminUser = Configuration["WSO2:AdminUser"] ?? "admin";
+                    var allowAllMenus = Configuration.GetValue("WSO2:AllowAllMenus", false);
+                    var isAdminUser = string.Equals(sub, adminUser, StringComparison.OrdinalIgnoreCase);
 
-                    Logger.LogInformation("Menu filter: sub={Sub}, adminUser={AdminUser}, match={Match}",
-                        sub, adminUser, string.Equals(sub, adminUser, StringComparison.OrdinalIgnoreCase));
+                    Logger.LogInformation("Menu filter: sub={Sub}, adminUser={AdminUser}, allowAllMenus={AllowAllMenus}, isAdmin={IsAdmin}",
+                        sub, adminUser, allowAllMenus, isAdminUser);
 
-                    if (string.Equals(sub, adminUser, StringComparison.OrdinalIgnoreCase))
+                    if (allowAllMenus || isAdminUser)
                     {
-                        // Admin gets all menus
                         isUserAdmin = true;
                         menuItems = allMenus;
-                        Logger.LogInformation("Admin user - showing all {Count} menus", allMenus.Count);
+                        Logger.LogInformation("Showing all {Count} menus (AllowAllMenus or admin)", allMenus.Count);
                     }
                     else
                     {
