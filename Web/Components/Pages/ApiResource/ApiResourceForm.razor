@@ -104,6 +104,22 @@
             </RadzenStack>
         </RadzenFieldset>
 
+        @if (IsViewOnly)
+        {
+            <RadzenFieldset Text="Metadata">
+                <RadzenRow Gap="1rem">
+                    <RadzenColumn Size="6">
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary">Created</RadzenText>
+                        <RadzenText TextStyle="TextStyle.Body2">@(CreatedDate?.ToString("yyyy-MM-dd HH:mm") ?? "—")</RadzenText>
+                    </RadzenColumn>
+                    <RadzenColumn Size="6">
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary">Last Modified</RadzenText>
+                        <RadzenText TextStyle="TextStyle.Body2">@(LastModifiedDate?.ToString("yyyy-MM-dd HH:mm") ?? "—")</RadzenText>
+                    </RadzenColumn>
+                </RadzenRow>
+            </RadzenFieldset>
+        }
+
         @if (!IsViewOnly)
         {
             <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem">
@@ -126,6 +142,8 @@
     [Parameter] public bool IsViewOnly { get; set; }
 
     private ApiResourceFormModel model = new();
+    private DateTime? CreatedDate;
+    private DateTime? LastModifiedDate;
 
     protected override async Task OnInitializedAsync()
     {
@@ -149,6 +167,8 @@
                             Description = s.Description
                         }).ToList()
                     };
+                    CreatedDate = resource.CreatedDate;
+                    LastModifiedDate = resource.LastModifiedDate;
                 }
             }
             catch (Exception ex)
@@ -165,24 +185,43 @@
 
     private void LoadScopesFromConfig()
     {
-        var configScopes = Configuration.GetSection("WSO2:ApiResourceScopes").Get<string[]>();
-        if (configScopes != null && configScopes.Any())
+        try
         {
-            model.Scopes.Clear();
-            foreach (var scope in configScopes)
+            var scopesSection = Configuration.GetSection("WSO2:ApiResourceScopes");
+            var configScopes = scopesSection.Get<string[]>();
+
+            // Fallback: read children if Get<string[]>() returns null
+            if (configScopes == null || !configScopes.Any())
             {
-                model.Scopes.Add(new ScopeFormModel
+                var children = scopesSection.GetChildren().ToList();
+                if (children.Any())
                 {
-                    Name = scope,
-                    DisplayName = scope.Replace(":", " - "),
-                    Description = $"Auto-loaded from configuration"
-                });
+                    configScopes = children.Select(c => c.Value ?? string.Empty).Where(s => !string.IsNullOrEmpty(s)).ToArray();
+                }
             }
-            NotificationService.Notify(NotificationSeverity.Info, "Loaded", $"Loaded {configScopes.Length} scopes from configuration");
+
+            if (configScopes != null && configScopes.Any())
+            {
+                model.Scopes.Clear();
+                foreach (var scope in configScopes)
+                {
+                    model.Scopes.Add(new ScopeFormModel
+                    {
+                        Name = scope,
+                        DisplayName = scope.Replace(":", " - "),
+                        Description = "Auto-loaded from configuration"
+                    });
+                }
+                NotificationService.Notify(NotificationSeverity.Info, "Loaded", $"Loaded {configScopes.Length} scopes from configuration");
+            }
+            else
+            {
+                NotificationService.Notify(NotificationSeverity.Warning, "No Scopes", "No scopes found in WSO2:ApiResourceScopes configuration");
+            }
         }
-        else
+        catch (Exception ex)
         {
-            NotificationService.Notify(NotificationSeverity.Warning, "No Scopes", "No scopes found in WSO2:ApiResourceScopes configuration");
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to load scopes from config: {ex.Message}");
         }
     }
 
@@ -203,6 +242,20 @@
                     NotificationService.Notify(NotificationSeverity.Warning, "Validation", "All scopes must have a name.");
                     return;
                 }
+            }
+
+            // Check for duplicate scope names
+            var duplicateScopes = form.Scopes
+                .GroupBy(s => s.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() > 1)
+                .Select(g => g.Key)
+                .ToList();
+
+            if (duplicateScopes.Any())
+            {
+                NotificationService.Notify(NotificationSeverity.Warning, "Validation",
+                    $"Duplicate scope names found: {string.Join(", ", duplicateScopes)}. Scope names must be unique.");
+                return;
             }
 
             var apiResource = new ApiResourceDto

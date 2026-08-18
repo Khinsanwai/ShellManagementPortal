@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Shell Management Portal — Sequence Diagrams</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --card: #ffffff;
+      --text: #1a1d23;
+      --muted: #5c6370;
+      --line: #d8dce3;
+      --accent: #1b6ec2;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    header {
+      background: var(--card);
+      border-bottom: 1px solid var(--line);
+      padding: 20px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+    }
+    h1 { margin: 0 0 6px; font-size: 22px; }
+    h2 { margin: 0 0 8px; font-size: 18px; }
+    p.lead, .muted { color: var(--muted); margin: 0; }
+    .actions { display: flex; gap: 8px; flex-shrink: 0; }
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: 0;
+      padding: 8px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    button.secondary { background: #4b5563; }
+    main { max-width: 1100px; margin: 0 auto; padding: 24px 32px 64px; }
+    section {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 20px 22px 8px;
+      margin-bottom: 20px;
+      page-break-inside: avoid;
+    }
+    .mermaid { display: flex; justify-content: center; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 12px 0 16px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 4px; }
+    nav a {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 13px;
+      border: 1px solid var(--line);
+      padding: 4px 10px;
+      border-radius: 4px;
+      background: var(--card);
+    }
+    .note {
+      background: #eef5fb;
+      border: 1px solid #c5d9ec;
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-size: 14px;
+      margin: 8px 0 16px;
+    }
+    @media print {
+      header .actions, nav { display: none; }
+      body { background: #fff; }
+      header, section { border: none; box-shadow: none; }
+      section { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Shell Management Portal — Sequence Diagrams</h1>
+      <p class="lead">Parent portal: Blazor Server web, ASP.NET Core API, WSO2 Identity Server, SQL Server (SMPortal).</p>
+    </div>
+    <div class="actions">
+      <button type="button" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+  </header>
+
+  <main>
+    <nav>
+      <a href="#overview">Overview</a>
+      <a href="#login">1. Login</a>
+      <a href="#shell">2. Shell load</a>
+      <a href="#cqrs">3. Local CQRS</a>
+      <a href="#scim">4. Users / SCIM</a>
+      <a href="#logout">5. Logout</a>
+    </nav>
+
+    <section id="overview">
+      <h2>Participants</h2>
+      <table>
+        <thead>
+          <tr><th>Participant</th><th>Role</th><th>Auth</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Browser</td><td>Admin UI; cookie session after login</td><td>HttpOnly cookie</td></tr>
+          <tr><td>ShellMgmt.Web (:7067)</td><td>OIDC client, Blazor pages, ApiService / MenuService</td><td>Confidential client vs WSO2</td></tr>
+          <tr><td>WSO2 Identity Server</td><td>Authorize, token, UserInfo, JWKS, SCIM Users/Groups/Roles</td><td>OIDC + admin Basic</td></tr>
+          <tr><td>ShellMgmt.Api (:7203)</td><td>JWT API, MediatR CQRS, ScimService, AuditLogFilter</td><td>Bearer JWT</td></tr>
+          <tr><td>SQL Server (SMPortal)</td><td>appshell + keycloak schemas via AppDbContext / ReadDbContext</td><td>Connection string</td></tr>
+        </tbody>
+      </table>
+      <div class="note">
+        Dual identity: users and groups live in WSO2 (SCIM 2.0). Menus, claims, institutions, org units, apps, tenants,
+        UserMenuAssignment, and AppGroupAssignment live in SQL Server. The Web app never talks to SQL directly.
+      </div>
+    </section>
+
+    <section id="login">
+      <h2>1. OIDC login (authorization code)</h2>
+      <p class="muted">Unauthenticated requests are challenged. Web is an OIDC confidential client; the session is a cookie and the access token is saved for API calls.</p>
+      <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    actor Admin
+    participant Web as ShellMgmt.Web (Blazor :7067)
+    participant WSO2 as WSO2 Identity Server
+    participant API as ShellMgmt.Api (:7203)
+    participant SQL as SQL Server (SMPortal)
+
+    Admin->>Web: GET /Account/Login
+    Web-->>Admin: OIDC Challenge (302)
+    Admin->>WSO2: GET /oauth2/authorize (code + scopes)
+    WSO2-->>Admin: Login UI
+    Admin->>WSO2: Credentials
+    WSO2-->>Admin: 302 /signin-oidc?code=
+    Admin->>Web: GET /signin-oidc
+    Web->>WSO2: POST /oauth2/token (code + client secret)
+    WSO2-->>Web: access_token, id_token, refresh_token
+    Web->>WSO2: GET UserInfo
+    WSO2-->>Web: Claims (sub, name, groups, roles)
+    Note over Web: Cookie session + SaveTokens. OnTokenValidated fires.
+    Web->>API: POST userlog/create (Login Success)
+    API->>SQL: Insert Userlog
+    SQL-->>API: OK
+    API-->>Web: 200
+    Web-->>Admin: Redirect / (authenticated cookie)
+      </pre>
+    </section>
+
+    <section id="shell">
+      <h2>2. Parent shell bootstrap</h2>
+      <p class="muted">MainLayout reads the OIDC access token from the cookie, then loads profile, child apps, tenant, and sidebar menus. Non-admin users are filtered through UserMenuAssignment.</p>
+      <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    actor Admin
+    participant Web as ShellMgmt.Web
+    participant WSO2 as WSO2 IS
+    participant API as ShellMgmt.Api
+    participant SQL as SQL Server
+
+    Admin->>Web: Open portal (authenticated cookie)
+    Note over Web: GetTokenAsync(access_token) to AppConfig.AccessToken
+
+    Web->>API: GET user/Get/{sub} Bearer JWT
+    API->>WSO2: Validate JWT (issuer / JWKS)
+    WSO2-->>API: Token valid
+    API->>WSO2: SCIM GET /Users/{sub} (Basic admin)
+    WSO2-->>API: User profile
+    API-->>Web: UserDto (display name, SCIM username)
+
+    Web->>API: GET appgroup/GetUserApps/{sub}
+    API->>WSO2: SCIM user groups
+    API->>SQL: AppGroupAssignment intersect groups
+    SQL-->>API: Assigned child apps
+    API-->>Web: Child apps for sidebar
+
+    Web->>API: GET menuitem/get
+    API->>SQL: MediatR GetMenuItemQuery via ReadDbContext
+    SQL-->>API: Menu items
+    API-->>Web: All menu items
+
+    Web->>API: GET usermenu/GetAllMappings
+    API->>SQL: UserMenuAssignment
+    SQL-->>API: Mappings
+    API-->>Web: Assignments
+    Note over Web: Admin shows all menus. Else filter by sub or SCIM username plus parents.
+    Web-->>Admin: Sidebar + child-app launchers
+      </pre>
+    </section>
+
+    <section id="cqrs">
+      <h2>3. Local config write (CQRS)</h2>
+      <p class="muted">Menus, claims, institutions, org units, apps, and tenants live in SQL Server. Controllers send MediatR commands; AuditLogFilter writes a Userlog after the action.</p>
+      <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    actor Admin
+    participant Web as ShellMgmt.Web
+    participant WSO2 as WSO2 IS
+    participant API as ShellMgmt.Api
+    participant SQL as SQL Server
+
+    Admin->>Web: Save MenuItem / Claim / App form
+    Web->>API: PUT api/v1/menuitem/Update Bearer JWT
+    API->>WSO2: JWT Bearer validation
+    WSO2-->>API: OK
+    Note over API: UpdateMenuItemCommand to handler
+    API->>SQL: AppDbContext write + Unit of Work
+    SQL-->>API: Persisted entity
+    Note over API: AuditLogFilter sends CreateUserlogCommand
+    API->>SQL: Insert Userlog
+    API-->>Web: 200 + DTO
+    Web-->>Admin: List / form refresh
+      </pre>
+    </section>
+
+    <section id="scim">
+      <h2>4. Users and groups (SCIM 2.0)</h2>
+      <p class="muted">Identity is not stored in SMPortal. UserController and GroupController call ScimService with WSO2 admin Basic auth. The portal JWT only authorizes the admin calling the API.</p>
+      <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    actor Admin
+    participant Web as ShellMgmt.Web
+    participant WSO2 as WSO2 IS
+    participant API as ShellMgmt.Api
+    participant SQL as SQL Server
+
+    Admin->>Web: Users / Groups page (create or list)
+    Web->>API: POST api/v1/user/Create Bearer JWT
+    API->>WSO2: Validate caller JWT
+    WSO2-->>API: OK
+    API->>WSO2: SCIM POST /Users (Basic admin)
+    WSO2-->>API: Created SCIM user
+    API->>SQL: Audit Userlog only (no user row)
+    API-->>Web: UserDto
+    Web-->>Admin: User created
+    Note over Web,WSO2: Optional Web Wso2Service uses password grant and SCIM Roles for permissions.
+      </pre>
+    </section>
+
+    <section id="logout">
+      <h2>5. Logout</h2>
+      <p class="muted">Account/Logout writes an audit row, then signs out the cookie scheme and the OpenIdConnect scheme.</p>
+      <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    actor Admin
+    participant Web as ShellMgmt.Web
+    participant API as ShellMgmt.Api
+    participant SQL as SQL Server
+
+    Admin->>Web: GET /Account/Logout
+    Web->>API: POST userlog/create (Logout Success)
+    API->>SQL: Insert Userlog
+    Note over Web: SignOut cookie + OpenIdConnect. Cookie deleted.
+    Web-->>Admin: LocalRedirect / (next hit challenges login)
+      </pre>
+    </section>
+  </main>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      securityLevel: "loose",
+      theme: "neutral",
+      sequence: { actorMargin: 90, messageMargin: 28, boxMargin: 8 }
+    });
+  </script>
+</body>
+</html>

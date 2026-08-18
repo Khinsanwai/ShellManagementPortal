@@ -65,9 +65,7 @@ public class Wso2Service(HttpClient httpClient, IConfiguration config, ILogger<W
     public async Task<List<RolePermission>> GetRolePermissionsAsync(string roleName)
     {
         var permissions = new List<RolePermission>();
-        var wso2BaseUrl = _config["WSO2:OidcAuthority"]?.Replace("/oauth2/oidcdiscovery", "")
-                          ?? _config["WSO2:Authority"]?.Replace("/oauth2/token", "")
-                          ?? "https://localhost:9443";
+        var scimBaseUrl = GetScimBaseUrl();
 
         try
         {
@@ -78,8 +76,7 @@ public class Wso2Service(HttpClient httpClient, IConfiguration config, ILogger<W
                 return permissions;
             }
 
-            // Use SCIM2 API to get role details
-            var scimUrl = $"{wso2BaseUrl}/scim2/Roles?filter=displayName eq \"{roleName}\"";
+            var scimUrl = $"{scimBaseUrl}/Roles?filter=displayName eq \"{roleName}\"";
             var request = new HttpRequestMessage(HttpMethod.Get, scimUrl);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
 
@@ -131,9 +128,7 @@ public class Wso2Service(HttpClient httpClient, IConfiguration config, ILogger<W
     public async Task<List<RolePermission>> GetUserRolePermissionsAsync(string wso2UserId)
     {
         var allPermissions = new List<RolePermission>();
-        var wso2BaseUrl = _config["WSO2:OidcAuthority"]?.Replace("/oauth2/oidcdiscovery", "")
-                          ?? _config["WSO2:Authority"]?.Replace("/oauth2/token", "")
-                          ?? "https://localhost:9443";
+        var scimBaseUrl = GetScimBaseUrl();
 
         try
         {
@@ -143,8 +138,7 @@ public class Wso2Service(HttpClient httpClient, IConfiguration config, ILogger<W
                 return allPermissions;
             }
 
-            // Get user's groups/roles from SCIM2
-            var userUrl = $"{wso2BaseUrl}/scim2/Users/{wso2UserId}?attributes=groups";
+            var userUrl = $"{scimBaseUrl}/Users/{wso2UserId}?attributes=groups";
             var request = new HttpRequestMessage(HttpMethod.Get, userUrl);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
 
@@ -177,15 +171,18 @@ public class Wso2Service(HttpClient httpClient, IConfiguration config, ILogger<W
         return allPermissions;
     }
 
+    private string GetScimBaseUrl()
+    {
+        return _config["WSO2:ScimBaseUrl"]?.TrimEnd('/')
+            ?? throw new InvalidOperationException("WSO2:ScimBaseUrl is not configured in appsettings.");
+    }
+
     private async Task<string?> GetAdminAccessTokenAsync()
     {
         try
         {
-            var wso2BaseUrl = _config["WSO2:OidcAuthority"]?.Replace("/oauth2/oidcdiscovery", "")
-                              ?? _config["WSO2:Authority"]?.Replace("/oauth2/token", "")
-                              ?? "https://localhost:9443";
-
-            var tokenUrl = $"{wso2BaseUrl}/oauth2/token";
+            var tokenUrl = _config["WSO2:TokenEndPoint"]
+                ?? throw new InvalidOperationException("WSO2:TokenEndPoint is not configured in appsettings.");
             var request = new HttpRequestMessage(HttpMethod.Post, tokenUrl);
 
             var formData = new FormUrlEncodedContent(

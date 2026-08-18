@@ -50,7 +50,7 @@ builder.Services.AddAuthentication(options =>
 
     if (string.IsNullOrEmpty(wso2OidcAuthority))
     {
-        wso2OidcAuthority = "https://localhost:9443/oauth2/oidcdiscovery";
+        throw new InvalidOperationException("WSO2:OidcAuthority is not configured in appsettings.");
     }
 
     if (wso2OidcAuthority.EndsWith("/token", StringComparison.OrdinalIgnoreCase))

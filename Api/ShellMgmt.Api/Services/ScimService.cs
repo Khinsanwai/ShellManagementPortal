@@ -15,7 +15,8 @@ public class ScimService
     public ScimService(IConfiguration configuration, ILogger<ScimService> logger)
     {
         _logger = logger;
-        _baseUrl = configuration["WSO2:ScimBaseUrl"] ?? "https://localhost:9443/scim2";
+        _baseUrl = configuration["WSO2:ScimBaseUrl"]?.TrimEnd('/')
+            ?? throw new InvalidOperationException("WSO2:ScimBaseUrl is not configured in appsettings.");
 
         var handler = new HttpClientHandler
         {

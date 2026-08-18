@@ -15,7 +15,8 @@ public class Wso2ApiResourceService
     public Wso2ApiResourceService(IConfiguration configuration, ILogger<Wso2ApiResourceService> logger)
     {
         _logger = logger;
-        _baseUrl = configuration["WSO2:ApiBaseUrl"] ?? "https://localhost:9443/api/server/v1";
+        _baseUrl = configuration["WSO2:ApiBaseUrl"]?.TrimEnd('/')
+            ?? throw new InvalidOperationException("WSO2:ApiBaseUrl is not configured in appsettings.");
 
         var handler = new HttpClientHandler
         {
@@ -36,7 +37,7 @@ public class Wso2ApiResourceService
 
     public async Task<List<ApiResourceDto>> GetApiResourcesAsync()
     {
-        var url = $"{_baseUrl}/api-resources";
+        var url = $"{_baseUrl}/api-resources?limit=200";
         _logger.LogInformation("Fetching API resources from {Url}", url);
 
         var response = await _httpClient.GetAsync(url);
@@ -45,7 +46,7 @@ public class Wso2ApiResourceService
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogError("Failed to fetch API resources. Status: {StatusCode}, Body: {Body}", response.StatusCode, responseBody);
-            throw new Exception($"Failed to fetch API resources: {responseBody}");
+            throw new Exception($"Failed to fetch API resources: {ParseErrorMessage(responseBody)}");
         }
 
         _logger.LogDebug("API resources response: {Response}", responseBody);
@@ -74,7 +75,7 @@ public class Wso2ApiResourceService
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                 return null;
             var errorBody = await response.Content.ReadAsStringAsync();
-            throw new Exception($"Failed to fetch API resource: {errorBody}");
+            throw new Exception($"Failed to fetch API resource: {ParseErrorMessage(errorBody)}");
         }
 
         var responseBody = await response.Content.ReadAsStringAsync();
@@ -111,7 +112,7 @@ public class Wso2ApiResourceService
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogError("Failed to create API resource. Status: {StatusCode}, Body: {Body}", response.StatusCode, responseBody);
-            throw new Exception($"Failed to create API resource: {responseBody}");
+            throw new Exception($"Failed to create API resource: {ParseErrorMessage(responseBody)}");
         }
 
         _logger.LogInformation("API resource created successfully");
@@ -148,7 +149,7 @@ public class Wso2ApiResourceService
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogError("Failed to update API resource. Status: {StatusCode}, Body: {Body}", response.StatusCode, responseBody);
-            throw new Exception($"Failed to update API resource: {responseBody}");
+            throw new Exception($"Failed to update API resource: {ParseErrorMessage(responseBody)}");
         }
 
         _logger.LogInformation("API resource {Id} updated successfully", id);
@@ -167,11 +168,52 @@ public class Wso2ApiResourceService
         {
             var errorBody = await response.Content.ReadAsStringAsync();
             _logger.LogError("Failed to delete API resource. Status: {StatusCode}, Body: {Body}", response.StatusCode, errorBody);
-            throw new Exception($"Failed to delete API resource: {errorBody}");
+            throw new Exception($"Failed to delete API resource: {ParseErrorMessage(errorBody)}");
         }
 
         _logger.LogInformation("API resource {Id} deleted successfully", id);
         return true;
+    }
+
+    private static string ParseErrorMessage(string responseBody)
+    {
+        if (string.IsNullOrWhiteSpace(responseBody))
+            return "Unknown error occurred";
+
+        try
+        {
+            using var doc = JsonDocument.Parse(responseBody);
+            var root = doc.RootElement;
+
+            // Prefer description over message — it's usually more detailed
+            var message = root.TryGetProperty("message", out var msgProp) && msgProp.ValueKind == JsonValueKind.String
+                ? msgProp.GetString() : null;
+
+            var description = root.TryGetProperty("description", out var descProp) && descProp.ValueKind == JsonValueKind.String
+                ? descProp.GetString() : null;
+
+            // Combine both if available: "message — description"
+            if (!string.IsNullOrEmpty(message) && !string.IsNullOrEmpty(description))
+                return $"{message} — {description}";
+
+            if (!string.IsNullOrEmpty(description))
+                return description;
+
+            if (!string.IsNullOrEmpty(message))
+                return message;
+
+            if (root.TryGetProperty("detail", out var detail) && detail.ValueKind == JsonValueKind.String)
+                return detail.GetString() ?? responseBody;
+
+            if (root.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.String)
+                return error.GetString() ?? responseBody;
+        }
+        catch
+        {
+            // Not valid JSON, return as-is
+        }
+
+        return responseBody.Length > 500 ? responseBody[..500] + "..." : responseBody;
     }
 
     private static ApiResourceDto MapToApiResourceDto(JsonElement resource)
@@ -182,6 +224,7 @@ public class Wso2ApiResourceService
             Name = resource.TryGetProperty("name", out var name) ? name.GetString() ?? string.Empty : string.Empty,
             Identifier = resource.TryGetProperty("identifier", out var identifier) ? identifier.GetString() ?? string.Empty : string.Empty,
             Description = resource.TryGetProperty("description", out var desc) ? desc.GetString() : null,
+            Type = resource.TryGetProperty("type", out var type) ? type.GetString() : null,
             RequiresAuthorization = resource.TryGetProperty("requiresAuthorization", out var reqAuth) && reqAuth.GetBoolean()
         };
 
